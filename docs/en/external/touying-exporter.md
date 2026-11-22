@@ -24,6 +24,8 @@ Disadvantages: Cannot select and copy text, if needed, please use [Gistd](https:
 
 ## HTML Export
 
+The HTML export plays [scenes](../tutorials/dynamic/scene.md): fades, drawing, writing, moves, rotations and value trackers run in the browser. It stores every glyph once for the whole deck and compresses the presentation into a single offline file. Navigate with the arrow keys, space or a click. A click during an animation finishes it. <kbd>R</kbd> replays the current step, <kbd>N</kbd> shows the speaker notes, <kbd>F</kbd> toggles fullscreen and <kbd>P</kbd> opens a presenter window with the current and next page, the notes and a timer. `--html-engine impress` selects the previous impress.js export, and `--no-compress` embeds the deck as plain JSON.
+
 We generate SVG image files and package them with impress.js into an HTML file. This way, you can open and present it using a browser, and it supports GIF animations and speaker notes.
 
 ![image](https://github.com/touying-typ/touying-exporter/assets/34951714/207ddffc-87c8-4976-9bf4-4c6c5e2573ea)

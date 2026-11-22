@@ -4,6 +4,16 @@ sidebar_position: 8
 
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **feat: manim-style scenes (`touying-scene`)**
+
+  `touying-scene.scene` animates named objects (content, CeTZ drawings and value-dependent `tracked` drawings) along a declarative timeline of `play`, `wait` and `click` steps, with manim's vocabulary: `fade-in`/`fade-out`, `create`, `write`, `shift`, `move-to`, `rotate-by`, `scale-by`, `move-along`, `indicate`, `transform`, `set-value` and rate functions such as `"smooth"` and `"there-and-back"`. Every `click` is a subslide, so PDF, handout and article output show the state at the end of each step. With `--input touying-scene=html`, scenes wrap their objects in labelled groups and describe their animation in the page, which the HTML export of touying-exporter plays back. New config: `config-scene`. See the "Scenes" tutorial.
+
+  `tracked(.., interpolate: true)` lets the HTML player blend neighbouring samples of a value-dependent drawing, so motion is smooth with about a third of the samples. The HTML export also has a presenter window (<kbd>P</kbd>) with the current and next page, speaker notes and a timer. `transform-matching` morphs equations symbol by symbol, with `key` to mark corresponding parts.
+
 ## v0.8.1
 
 A patch release with fixes and a few corrections to behaviour that 0.8.0 introduced.
