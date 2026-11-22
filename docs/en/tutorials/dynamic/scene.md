@@ -144,6 +144,76 @@ Two animations may not change the same property of the same object at the same t
 
 Rate functions are named as in manim: `"smooth"` (default), `"linear"`, `"rush-into"`, `"rush-from"`, `"there-and-back"`, `"ease-in-quad"`, `"ease-out-quad"`, `"ease-in-cubic"`, `"ease-out-cubic"`, `"ease-in-out-cubic"`, `"ease-in-out-sine"`; any function on `[0, 1]` works too.
 
+## 3D scenes
+
+Give a scene a `camera` to add 3D objects, in the spirit of manim's `ThreeDScene`. Typst computes the geometry. In the HTML export the player projects and depth-sorts it on every frame, so camera moves are smooth and the audience can look around by dragging. The PDF shows the same projection at the end of each step.
+
+```typst
+#sc.scene(
+  width: 24cm,
+  height: 10cm,
+  camera: sc.camera(phi: 70deg, theta: -60deg, zoom: 1.3),
+  objects: (
+    axes: sc.axes3d(x: (-3, 3), y: (-3, 3), z: (-1.5, 2)),
+    surf: sc.surface(
+      f: (x, y) => calc.sin(x) * calc.cos(y),
+      x: (-3, 3), y: (-3, 3),
+      fill: gradient.linear(..color.map.viridis),
+      shade: true,
+    ),
+    top: sc.label3d((1.57, 0, 1.35), [max]),
+    formula: sc.obj(at: (0.4cm, 0.3cm), anchor: left + top, $z = sin x cos y$),
+  ),
+  timeline: (
+    sc.play(sc.create("axes"), sc.fade-in("surf")),
+    sc.click,
+    sc.rotate-camera(by: 120deg, run-time: 4),
+    sc.move-camera(phi: 10deg, zoom: 1.1),
+  ),
+)
+```
+
+**Camera.** `camera(phi:, theta:, zoom:, focal:, center:, at:, unit:)`:
+- `phi` is the polar angle from the $z$ axis (0° looks straight down) and `theta` the azimuth, as in manim.
+- `focal: none` is orthographic; a number is the focal distance for perspective.
+- `move-camera(phi:, theta:, zoom:, focal:, center:)` animates any of these.
+- `rotate-camera(by:)` orbits around the vertical axis.
+- Angles are taken literally: from 350° to 10° the camera turns back by 340°; ask for 370° to go the short way.
+
+**3D objects:**
+
+| Object | Description |
+| --- | --- |
+| `surface(f: (x, y) => z, x:, y:)` or `surface(fn: (u, v) => (x, y, z), u:, v:)` | A mesh with `samples: (24, 24)` cells. `fill` is a colour, a gradient (by height) or `(x, y, z) => color`; `shade: true` adds simple lighting. |
+| `curve3d(t => (x, y, z), t: (a, b))`, `line3d(..points)` | Curves and polylines. |
+| `vector3d(from, to)` | An arrow. |
+| `point3d(p)`, `polygon3d(..points)` | A point; a flat convex polygon. |
+| `axes3d(x:, y:, z:, labels:)` | Axes with tips, tick marks and labels. |
+| `label3d(p, body, depth: false)` | Typst content at a 3D point, always facing the viewer. It is drawn above the geometry; with `depth: true` it is sorted with it. |
+| `group3d(..objects)` | Several 3D objects animated as one. |
+
+A `tracked` object may return a 3D object, for example a surface whose shape depends on a value. With `interpolate: true` its points are blended smoothly. The number and order of points must not depend on the values.
+
+**Animations of 3D objects:**
+- `rotate-3d(id, angle, axis: "z", about: auto)` rotates about a world axis, through the object's centre by default.
+- `shift-3d(id, (dx, dy, dz))` moves it.
+- `fade-in`, `fade-out`, `add`, `remove`, `create` (draws lines progressively) and `set-value` also apply.
+- Rotations are applied in timeline order, so rotating about $y$ and then about $x$ differs from the reverse, as it should.
+
+**Layers.** All 3D objects of a scene share one layer, sorted by depth. 2D objects (`obj`, `cetz-obj`) are drawn in front of it, or behind it with `behind: true`.
+
+**In the HTML export:**
+- drag a 3D scene to look around and use the mouse wheel to zoom;
+- <kbd>0</kbd> eases back to the scripted view, and changing the page resets it;
+- dragging never advances the slide;
+- the presenter window shows the same view.
+
+**Limits:**
+- Depth sorting is per triangle and line segment (painter's algorithm), so intersecting surfaces or long faces can be ordered imperfectly.
+- Transparent surfaces are not sorted correctly.
+- Sizes of points, arrowheads, strokes and labels are in screen space.
+- Large tracked meshes make big files: `config-scene(max-geometry: ..)` limits them, and about 10–12 samples per second with `interpolate: true` are plenty.
+
 ## Configuration
 
 ```typst
