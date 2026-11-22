@@ -39,7 +39,14 @@
       + where
       + ". "
   )
-  if named {
+  if name == "_scene-fn" {
+    (
+      head
+        + "A `touying-scene.scene` must sit at the top level of the slide body: "
+        + "it cannot be nested in `uncover`, `only`, `alternatives` or other "
+        + "animation wrappers. To reveal it later, put a `#pause` before it."
+    )
+  } else if named {
     head + "Use the callback-style `utils." + name + "` instead."
   } else {
     (

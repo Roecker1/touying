@@ -758,6 +758,42 @@
 }
 
 
+/// Configuration for manim-style scenes (`touying-scene.scene`).
+///
+/// Example: `config-scene(run-time: 0.8, rate: "linear")`
+///
+/// - run-time (int, float): Default duration of an animation in seconds. Default is `1`.
+///
+/// - rate (str, function): Default rate function, a name from `touying-scene.rate-functions` or a function on `[0, 1]`. Default is `"smooth"`.
+///
+/// - samples-per-second (int, float): How often a `tracked` object is re-rendered while its values change, in the HTML export. Default is `30`; about `10` suffices for objects with `interpolate: true`.
+///
+/// - max-samples (int): Maximum number of samples per tracked object and segment; exceeding it is an error. Default is `241`.
+///
+/// - target (auto, str): `"html"` renders scenes for the HTML exporter, `"paged"` for PDF. `auto` reads `--input touying-scene=html`. Default is `auto`.
+///
+/// -> dictionary
+#let config-scene(
+  run-time: _default,
+  rate: _default,
+  samples-per-second: _default,
+  max-samples: _default,
+  target: _default,
+  ..args,
+) = {
+  assert(args.pos().len() == 0, message: "Unexpected positional arguments.")
+  return (
+    scene: _get-dict-without-default((
+      run-time: run-time,
+      rate: rate,
+      samples-per-second: samples-per-second,
+      max-samples: max-samples,
+      target: target,
+    ))
+      + args.named(),
+  )
+}
+
 /// The default configuration values used when no explicit configuration is provided.
 #let default-config = utils.merge-dicts(
   config-common(
@@ -908,10 +944,25 @@
     ),
     linearize: auto,
   ),
+  config-scene(
+    run-time: 1,
+    rate: "smooth",
+    samples-per-second: 30,
+    max-samples: 241,
+    target: auto,
+  ),
   config-store(),
 )
-/// all the real config prefixes: `("methods", "info", "colors", "page", "article", "store")`
-#let _prefixes = ("methods", "info", "colors", "page", "article", "store")
+/// all the real config prefixes: `("methods", "info", "colors", "page", "article", "scene", "store")`
+#let _prefixes = (
+  "methods",
+  "info",
+  "colors",
+  "page",
+  "article",
+  "scene",
+  "store",
+)
 
 /// Inject configuration changes into a block of content. Changes take effect only within `body` or the slide you call it in. Best used as a show rule. Useful for implementing features like `#show: appendix` or changing the cover method on the fly.
 ///

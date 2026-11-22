@@ -25,9 +25,11 @@
 //configs
 #import "configs.typ": (
   appendix, config-article, config-colors, config-common, config-info,
-  config-methods, config-page, config-store, default-config, touying-get-config,
-  touying-set-config,
+  config-methods, config-page, config-scene, config-store, default-config,
+  touying-get-config, touying-set-config,
 )
+//manim-style scenes
+#import "core/scene.typ" as touying-scene
 //entrypoint
 #import "entrypoint.typ": touying-slides
 //other
