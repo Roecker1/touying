@@ -770,6 +770,8 @@
 ///
 /// - max-samples (int): Maximum number of samples per tracked object and segment; exceeding it is an error. Default is `241`.
 ///
+/// - max-geometry (int): Maximum number of coordinates of a tracked 3D object per segment in the HTML export (samples × points × 3); exceeding it is an error. Default is `300000`.
+///
 /// - target (auto, str): `"html"` renders scenes for the HTML exporter, `"paged"` for PDF. `auto` reads `--input touying-scene=html`. Default is `auto`.
 ///
 /// -> dictionary
@@ -778,6 +780,7 @@
   rate: _default,
   samples-per-second: _default,
   max-samples: _default,
+  max-geometry: _default,
   target: _default,
   ..args,
 ) = {
@@ -788,6 +791,7 @@
       rate: rate,
       samples-per-second: samples-per-second,
       max-samples: max-samples,
+      max-geometry: max-geometry,
       target: target,
     ))
       + args.named(),
@@ -949,6 +953,7 @@
     rate: "smooth",
     samples-per-second: 30,
     max-samples: 241,
+    max-geometry: 300000,
     target: auto,
   ),
   config-store(),

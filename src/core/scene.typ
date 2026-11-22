@@ -18,6 +18,11 @@
 
 #import "../utils.typ"
 #import "animation.typ": touying-fn-wrapper
+#import "scene3d.typ" as s3
+#import "scene3d.typ": (
+  axes3d, camera, curve3d, group3d, label3d, line3d, point3d, polygon3d,
+  surface, vector3d,
+)
 
 #let _schema-version = 1
 
@@ -91,6 +96,7 @@
   anchor: center + horizon,
   visible: auto,
   pivot: auto,
+  behind: false,
 ) = (
   kind: "touying-scene-obj",
   type: "content",
@@ -99,6 +105,7 @@
   anchor: anchor,
   visible: visible,
   pivot: pivot,
+  behind: behind,
 )
 
 /// A CeTZ object drawn in the scene's shared coordinate system. All CeTZ
@@ -111,12 +118,13 @@
 /// - pivot (auto, array): Centre for rotations and scaling in scene
 ///   coordinates; `auto` is the centre of the drawing's bounding box.
 /// -> dictionary
-#let cetz-obj(body, visible: auto, pivot: auto) = (
+#let cetz-obj(body, visible: auto, pivot: auto, behind: false) = (
   kind: "touying-scene-obj",
   type: "cetz",
   body: body,
   visible: visible,
   pivot: pivot,
+  behind: behind,
 )
 
 /// An object that depends on numeric values, like manim's `ValueTracker` with
@@ -132,7 +140,14 @@
 /// changes continuously with the values (no rounding, thresholds or branches).
 ///
 /// -> dictionary
-#let tracked(fn, visible: auto, pivot: auto, interpolate: false, ..values) = {
+#let tracked(
+  fn,
+  visible: auto,
+  pivot: auto,
+  interpolate: false,
+  behind: false,
+  ..values,
+) = {
   assert(
     values.pos().len() == 0,
     message: "touying-scene.tracked: values must be named, e.g. `tracked(x: 0, v => ..)`.",
@@ -145,6 +160,7 @@
     visible: visible,
     pivot: pivot,
     interpolate: interpolate,
+    behind: behind,
   )
 }
 
@@ -343,6 +359,67 @@
     rate: rate,
   )
 }
+
+/// Move the 3D camera (like manim's `move_camera`). Angles are taken
+/// literally: going from 350° to 10° turns back by 340° (use 370° for the
+/// short way).
+#let move-camera(
+  phi: auto,
+  theta: auto,
+  zoom: auto,
+  focal: auto,
+  center: auto,
+  run-time: auto,
+  rate: auto,
+) = _anim(
+  "move-camera",
+  ("@camera",),
+  phi: phi,
+  theta: theta,
+  zoom: zoom,
+  focal: focal,
+  center: center,
+  run-time: run-time,
+  rate: rate,
+)
+
+/// Orbit the 3D camera around the vertical axis by `by` (ambient rotation);
+/// the rate is linear unless given.
+#let rotate-camera(by: 360deg, run-time: auto, rate: auto) = _anim(
+  "rotate-camera",
+  ("@camera",),
+  by: by,
+  run-time: run-time,
+  rate: rate,
+)
+
+/// Rotate a 3D object by `angle` about a world axis (`"x"`, `"y"`, `"z"` or a
+/// vector) through `about` (`auto`: the centre of its bounding box).
+#let rotate-3d(
+  target,
+  angle,
+  axis: "z",
+  about: auto,
+  run-time: auto,
+  rate: auto,
+) = _anim(
+  "rotate-3d",
+  (target,),
+  angle: angle,
+  axis: axis,
+  about: about,
+  run-time: run-time,
+  rate: rate,
+)
+
+/// Move a 3D object by a world vector `(dx, dy, dz)`.
+#let shift-3d(target, by, run-time: auto, rate: auto) = _anim(
+  "shift-3d",
+  (target,),
+  by: by,
+  run-time: run-time,
+  rate: rate,
+)
 
 /// Make an object visible instantly.
 #let add(target) = _anim("add", (target,), run-time: 0)
@@ -573,6 +650,47 @@
 // objects, the pivot for CeTZ objects.
 #let _handle(r) = if r.anchor != none { r.anchor } else { (r.pivot)() }
 
+// 3D objects: plain 3D objects, or tracked objects that return one.
+#let _is3d(o) = (
+  s3.is-3d(o) or (o.type == "tracked" and s3.is-3d((o.fn)(o.values)))
+)
+
+#let _geom3d(o, values) = if o.type == "tracked" {
+  let inner = (o.fn)(values)
+  assert(
+    s3.is-3d(inner),
+    message: "touying-scene: a tracked 3D object must always return a 3D object.",
+  )
+  s3.build(inner)
+} else { s3.build(o) }
+
+#let _anims3d = (
+  "fade-in",
+  "fade-out",
+  "add",
+  "remove",
+  "create",
+  "uncreate",
+  "set-value",
+  "rotate-3d",
+  "shift-3d",
+)
+
+#let _axis3d(a) = if a == "x" { (1.0, 0.0, 0.0) } else if a == "y" {
+  (0.0, 1.0, 0.0)
+} else if a == "z" { (0.0, 0.0, 1.0) } else {
+  assert(
+    type(a) == array and a.len() == 3 and a.any(x => x != 0),
+    message: "touying-scene.rotate-3d: `axis` must be \"x\", \"y\", \"z\" or a non-zero vector.",
+  )
+  a.map(float)
+}
+
+#let _step-progress(st, n) = range(n).map(k => st.at(
+  "step:" + str(k),
+  default: 0.0,
+))
+
 // ---------------------------------------------------------------------------
 // Timeline compiler
 // ---------------------------------------------------------------------------
@@ -642,6 +760,71 @@
 
 #let _eps = 1e-9
 
+// Arc-length position on a polyline at progress p.
+#let _path-at(points, p) = {
+  let lengths = ()
+  let total = 0.0
+  for i in range(points.len() - 1) {
+    let (a, b) = (points.at(i), points.at(i + 1))
+    let l = calc.sqrt(
+      calc.pow(b.at(0) - a.at(0), 2) + calc.pow(b.at(1) - a.at(1), 2),
+    )
+    lengths.push(l)
+    total += l
+  }
+  if total <= _eps { return points.first() }
+  let target = calc.clamp(p, 0, 1) * total
+  let acc = 0.0
+  for (i, l) in lengths.enumerate() {
+    if acc + l >= target - _eps or i == lengths.len() - 1 {
+      let f = if l <= _eps { 0 } else { calc.clamp((target - acc) / l, 0, 1) }
+      let (a, b) = (points.at(i), points.at(i + 1))
+      return (
+        a.at(0) + (b.at(0) - a.at(0)) * f,
+        a.at(1) + (b.at(1) - a.at(1)) * f,
+      )
+    }
+    acc += l
+  }
+  points.last()
+}
+
+// State of one object at segment-local time t.
+// With `left: true`, the limit from the left at t: tracks starting at t
+// (including instant updates at t) are not applied yet. With `before-ev`,
+// tracks starting exactly at t from that event or later in the timeline are
+// not applied (pivots of 3D steps).
+#let _state-at(model, seg, id, t, left: false, before-ev: none) = {
+  let st = seg.start.at(id)
+  for tr in seg.tracks.at(id, default: ()) {
+    if t + _eps < tr.t0 { continue }
+    if left and tr.t0 >= t - _eps { continue }
+    if (
+      before-ev != none
+        and calc.abs(tr.t0 - t) <= _eps
+        and tr.at("ev", default: -1) >= before-ev
+    ) { continue }
+    let p = if tr.t1 - tr.t0 <= _eps { 1.0 } else {
+      calc.clamp((t - tr.t0) / (tr.t1 - tr.t0), 0.0, 1.0)
+    }
+    let e = _ease-eval(model.rates.at(tr.ease), p)
+    if tr.prop == "path" {
+      let (x, y) = _path-at(tr.points, e)
+      st.tx = x
+      st.ty = y
+    } else {
+      let v = tr.v0 + (tr.v1 - tr.v0) * e
+      if tr.prop.starts-with("val:") {
+        st.values.insert(tr.prop.slice(4), v)
+      } else {
+        st.insert(tr.prop, v)
+      }
+    }
+  }
+  st
+}
+
+
 // Compile the scene into segments. Needs context (measurements).
 #let _compile(spec, geo, config) = {
   let objects = spec.objects
@@ -665,6 +848,46 @@
     } else { o.visible }
     state.insert(id, _initial-state(o, visible))
   }
+  let has-camera = spec.camera != none
+  let cam = if has-camera {
+    assert(
+      type(spec.camera) == dictionary
+        and spec.camera.at("kind", default: none) == "touying-scene-camera",
+      message: "touying-scene.scene: `camera` must be made with `camera(..)`.",
+    )
+    state.insert("@camera", (
+      opacity: 1.0,
+      tx: 0.0,
+      ty: 0.0,
+      rot: 0.0,
+      scale: 1.0,
+      draw: 1.0,
+      reveal: 1.0,
+      values: s3.camera-values(spec.camera),
+    ))
+    (
+      unit: if spec.camera.unit == auto { geo.u } else {
+        _pt(spec.camera.unit)
+      },
+      at: if spec.camera.at == auto { (geo.w / 2, geo.h / 2) } else {
+        _pos(geo, spec.camera.at)
+      },
+    )
+  } else { none }
+  let is3d = (:)
+  for (id, o) in objects {
+    is3d.insert(id, _is3d(o))
+    if is3d.at(id) {
+      assert(
+        has-camera,
+        message: "touying-scene: the 3D object `"
+          + id
+          + "` needs `scene(camera: camera(..))`.",
+      )
+    }
+  }
+  let steps = (:) // id -> 3D transform steps
+  let ev = -1 // event index (timeline order)
 
   let segments = ()
   let seg = (start: state, tracks: (:), morphs: (), duration: 0.0)
@@ -689,7 +912,43 @@
             and a.at("kind", default: none) == "touying-scene-anim",
           message: "touying-scene.play: expected animations, got " + repr(a),
         )
+        ev += 1
+        if a.targets == ("@camera",) {
+          assert(
+            has-camera,
+            message: "touying-scene: `"
+              + a.type
+              + "` needs `scene(camera: camera(..))`.",
+          )
+        }
         for t in a.targets {
+          if t == "@camera" { continue }
+          if is3d.at(t, default: false) {
+            assert(
+              a.type in _anims3d,
+              message: "touying-scene: `"
+                + a.type
+                + "` does not apply to the 3D object `"
+                + t
+                + "`. 3D objects support "
+                + _anims3d.join(", ")
+                + ".",
+            )
+            assert(
+              a.params.at("shift", default: none) == none,
+              message: "touying-scene: `"
+                + a.type
+                + "` with `shift` does not apply to 3D objects; use shift-3d.",
+            )
+          } else if a.type in ("rotate-3d", "shift-3d") and t in ids {
+            panic(
+              "touying-scene: `"
+                + a.type
+                + "` needs a 3D object, `"
+                + t
+                + "` is not one.",
+            )
+          }
           assert(
             t in ids,
             message: "touying-scene: unknown object `"
@@ -705,7 +964,9 @@
         ) { entry.run-time } else { default-run-time })
         let rate = if a.rate != auto { a.rate } else if a.type == "indicate" {
           "there-and-back"
-        } else if entry.rate != auto { entry.rate } else { default-rate }
+        } else if a.type == "rotate-camera" { "linear" } else if (
+          entry.rate != auto
+        ) { entry.rate } else { default-rate }
         let ease = if type(rate) == str {
           assert(
             rate in rate-functions,
@@ -773,6 +1034,7 @@
               v0: float(v0),
               v1: float(v1),
               ease: ease,
+              ev: ev,
             )
               + extra,
           )
@@ -1216,6 +1478,96 @@
               v,
             )
           }
+        } else if ty in ("move-camera", "rotate-camera") {
+          let cv = st.values
+          let targets = (:)
+          if ty == "rotate-camera" {
+            targets.insert("theta", cv.theta + s3._deg(a.params.by))
+          } else {
+            let p = a.params
+            if p.phi != auto { targets.insert("phi", s3._deg(p.phi)) }
+            if p.theta != auto { targets.insert("theta", s3._deg(p.theta)) }
+            if p.zoom != auto { targets.insert("zoom", float(p.zoom)) }
+            if p.focal != auto {
+              targets.insert("ifocal", if p.focal == none { 0.0 } else {
+                1 / float(p.focal)
+              })
+            }
+            if p.center != auto {
+              targets.insert("cx", float(p.center.at(0)))
+              targets.insert("cy", float(p.center.at(1)))
+              targets.insert("cz", float(p.center.at(2)))
+            }
+          }
+          let (lo, hi) = (calc.min(..table), calc.max(..table))
+          for (name, v) in targets {
+            let v0 = cv.at(name)
+            for e in (lo, hi) {
+              let x = v0 + (v - v0) * e
+              if name == "zoom" {
+                assert(
+                  x > 0,
+                  message: "touying-scene.move-camera: the zoom must stay positive (also with the rate's overshoot).",
+                )
+              }
+              if name == "ifocal" {
+                assert(
+                  x >= 0,
+                  message: "touying-scene.move-camera: the focal distance must stay positive (also with the rate's overshoot).",
+                )
+              }
+            }
+            (seg, state, last-end) = push(
+              seg,
+              state,
+              last-end,
+              "@camera",
+              "val:" + name,
+              v0,
+              v,
+            )
+          }
+        } else if ty in ("rotate-3d", "shift-3d") {
+          let key = id + "/transform3d"
+          if last-end.at(key, default: -1.0) > t0 + _eps {
+            panic(
+              "touying-scene: overlapping 3D transforms on `"
+                + id
+                + "` at "
+                + str(calc.round(t0, digits: 3))
+                + "s. Run them one after another.",
+            )
+          }
+          last-end.insert(key, t1)
+          let list = steps.at(id, default: ())
+          let step = if ty == "rotate-3d" {
+            (
+              kind: "rot",
+              axis: _axis3d(a.params.axis),
+              angle: s3._deg(a.params.angle),
+              vec: (0.0, 0.0, 0.0),
+              about: a.params.about,
+            )
+          } else {
+            (
+              kind: "move",
+              axis: (0.0, 0.0, 1.0),
+              angle: 0.0,
+              vec: s3._vec3(a.params.by),
+              about: none,
+            )
+          }
+          list.push(step + (seg: segments.len(), t0: t0, ev: ev))
+          steps.insert(id, list)
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "step:" + str(list.len() - 1),
+            0,
+            1,
+          )
         } else if ty == "add" {
           (seg, state, last-end) = instant(
             seg,
@@ -1246,64 +1598,32 @@
   seg.duration = cursor
   seg.insert("end", state)
   segments.push(seg)
-  (segments: segments, rates: rates)
-}
 
-// Arc-length position on a polyline at progress p.
-#let _path-at(points, p) = {
-  let lengths = ()
-  let total = 0.0
-  for i in range(points.len() - 1) {
-    let (a, b) = (points.at(i), points.at(i + 1))
-    let l = calc.sqrt(
-      calc.pow(b.at(0) - a.at(0), 2) + calc.pow(b.at(1) - a.at(1), 2),
-    )
-    lengths.push(l)
-    total += l
-  }
-  if total <= _eps { return points.first() }
-  let target = calc.clamp(p, 0, 1) * total
-  let acc = 0.0
-  for (i, l) in lengths.enumerate() {
-    if acc + l >= target - _eps or i == lengths.len() - 1 {
-      let f = if l <= _eps { 0 } else { calc.clamp((target - acc) / l, 0, 1) }
-      let (a, b) = (points.at(i), points.at(i + 1))
-      return (
-        a.at(0) + (b.at(0) - a.at(0)) * f,
-        a.at(1) + (b.at(1) - a.at(1)) * f,
-      )
-    }
-    acc += l
-  }
-  points.last()
-}
-
-// State of one object at segment-local time t.
-// With `left: true`, the limit from the left at t: tracks starting at t
-// (including instant updates at t) are not applied yet.
-#let _state-at(model, seg, id, t, left: false) = {
-  let st = seg.start.at(id)
-  for tr in seg.tracks.at(id, default: ()) {
-    if t + _eps < tr.t0 { continue }
-    if left and tr.t0 >= t - _eps { continue }
-    let p = if tr.t1 - tr.t0 <= _eps { 1.0 } else {
-      calc.clamp((t - tr.t0) / (tr.t1 - tr.t0), 0.0, 1.0)
-    }
-    let e = _ease-eval(model.rates.at(tr.ease), p)
-    if tr.prop == "path" {
-      let (x, y) = _path-at(tr.points, e)
-      st.tx = x
-      st.ty = y
-    } else {
-      let v = tr.v0 + (tr.v1 - tr.v0) * e
-      if tr.prop.starts-with("val:") {
-        st.values.insert(tr.prop.slice(4), v)
-      } else {
-        st.insert(tr.prop, v)
+  // Pivots of 3D rotations: the centre of the object as it is when the step
+  // starts (values and earlier steps at that moment, excluding events that
+  // come later in the timeline at the same time).
+  let partial = (segments: segments, rates: rates)
+  for (id, list) in steps {
+    for (k, step) in list.enumerate() {
+      let pivot = if step.kind != "rot" { (0.0, 0.0, 0.0) } else if (
+        step.about != auto
+      ) { s3._vec3(step.about) } else {
+        let sg = segments.at(step.seg)
+        let st = _state-at(partial, sg, id, step.t0, before-ev: step.ev)
+        let g = _geom3d(objects.at(id), st.values)
+        let m = s3.steps-matrix(
+          list
+            .slice(0, k)
+            .map(x => x + (pivot: x.at("pivot", default: (0.0, 0.0, 0.0)))),
+          _step-progress(st, k),
+        )
+        s3.bbox-center(s3.points(g).map(p => s3.mat-apply(m, p)))
       }
+      list.at(k).insert("pivot", pivot)
     }
+    steps.insert(id, list)
   }
-  st
+  (segments: segments, rates: rates, steps: steps, cam: cam, is3d: is3d)
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,42 +1658,104 @@
   )
 }
 
+// The 3D objects of a scene in a given state: (view, items, geometries).
+#let _world-items(spec, model, states) = {
+  let view = s3.make-view(
+    states.at("@camera").values,
+    model.cam.unit,
+    model.cam.at,
+  )
+  let items = ()
+  let geoms = ()
+  for (id, o) in spec.objects {
+    if not model.is3d.at(id) { continue }
+    let st = states.at(id)
+    let g = _geom3d(o, st.values)
+    let list = model.steps.at(id, default: ())
+    let m = s3.steps-matrix(list, _step-progress(st, list.len()))
+    items.push((g, m, st.opacity, st.draw))
+    geoms.push(g)
+  }
+  (view, items, geoms)
+}
+
+// The 3D layer for PDF: projected, sorted and drawn like the HTML player.
+#let _render-world(self, spec, model, states) = {
+  let (view, items, geoms) = _world-items(spec, model, states)
+  let list = s3.drawables(view, items)
+  let place-label(d) = {
+    let body = geoms.at(d.obj).labels.at(d.label).body
+    let size = measure(body)
+    let content = place(
+      dx: d.at.at(0) * 1pt - size.width / 2,
+      dy: d.at.at(1) * 1pt - size.height / 2,
+      body,
+    )
+    if d.alpha < 1 - 1e-6 {
+      utils.alpha-changing-cover(self: self, alpha: d.alpha * 100%, content)
+    } else { content }
+  }
+  for d in list {
+    if d.kind == "label" and not d.depth { continue }
+    s3.draw-one(d, place-label)
+  }
+  // Overlay labels: above all geometry.
+  for d in list {
+    if d.kind == "label" and not d.depth { place-label(d) }
+  }
+}
+
 // Static rendering (PDF, handout, article): the state `st` of every object.
-#let _render-static(self, spec, geo, states) = {
+// Layers: 2D objects with `behind: true`, the 3D world, other 2D objects.
+#let _render-static(self, spec, geo, model, states) = {
+  let draw-2d(behind) = {
+    for (id, o) in spec.objects {
+      if model.is3d.at(id) or o.at("behind", default: false) != behind {
+        continue
+      }
+      let st = states.at(id)
+      if st.opacity <= 1e-6 { continue }
+      let r = _resolve-at(spec, geo, id, o, st.values)
+      let layer = _transform-layer(r.layer, st, r.pivot)
+      if st.opacity < 1 - 1e-6 {
+        layer = utils.alpha-changing-cover(
+          self: self,
+          alpha: st.opacity * 100%,
+          layer,
+        )
+      }
+      place(top + left, layer)
+    }
+  }
   box(
     width: geo.w * 1pt,
     height: geo.h * 1pt,
     clip: spec.clip,
     {
-      for (id, o) in spec.objects {
-        let st = states.at(id)
-        if st.opacity <= 1e-6 { continue }
-        let r = _resolve-at(spec, geo, id, o, st.values)
-        let layer = _transform-layer(r.layer, st, r.pivot)
-        if st.opacity < 1 - 1e-6 {
-          layer = utils.alpha-changing-cover(
-            self: self,
-            alpha: st.opacity * 100%,
-            layer,
-          )
-        }
-        place(top + left, layer)
-      }
+      draw-2d(true)
+      if model.cam != none { _render-world(self, spec, model, states) }
+      draw-2d(false)
     },
   )
 }
 
 #let _round(x) = calc.round(x, digits: 4)
 
-#let _state-json(st) = (
-  opacity: _round(st.opacity),
-  tx: _round(st.tx),
-  ty: _round(st.ty),
-  rot: _round(st.rot),
-  scale: _round(st.scale),
-  draw: _round(st.draw),
-  reveal: _round(st.reveal),
-)
+#let _state-json(st, rnd: _round) = {
+  let out = (
+    opacity: rnd(st.opacity),
+    tx: rnd(st.tx),
+    ty: rnd(st.ty),
+    rot: rnd(st.rot),
+    scale: rnd(st.scale),
+    draw: rnd(st.draw),
+    reveal: rnd(st.reveal),
+  )
+  for (k, v) in st {
+    if k.starts-with("step:") { out.insert(k, rnd(v)) }
+  }
+  out
+}
 
 // Sample times of a tracked object within a segment.
 // Sampling plan of a tracked object in one segment. [0, duration] is split
@@ -1468,14 +1850,127 @@
   let max-samples = config.at("max-samples", default: 241)
   let active = lifecycle == "active"
   let start = if lifecycle == "held" { seg.end } else { seg.start }
+  // 3D scenes keep full precision: projections amplify rounding errors.
+  let has3d = model.cam != none
+  let _round = if has3d { x => x } else { _round }
   let records = ()
   let layers = ()
+  let back-layers = ()
+  let world-layers = ()
   let used-rates = ()
+  let max-geometry = config.at("max-geometry", default: 300000)
   for (order, (id, o)) in spec.objects.pairs().enumerate() {
     let st = start.at(id)
     let tracks = if active { seg.tracks.at(id, default: ()) } else { () }
     if st.opacity <= 1e-6 and tracks.len() == 0 { continue }
     let label-name = dom + "-" + id
+    if model.is3d.at(id) {
+      let g = _geom3d(o, st.values)
+      let knots = none
+      if o.type == "tracked" and tracks.any(tr => tr.prop.starts-with("val:")) {
+        let plan = _spans(model, seg, id, fps)
+        let renders = ()
+        let spans = ()
+        for sp in plan.spans {
+          let points = ()
+          for (p, values) in sp.knots {
+            let i = renders.position(v => v == values)
+            if i == none {
+              renders.push(values)
+              i = renders.len() - 1
+            }
+            points.push((p, i))
+          }
+          spans.push((
+            a: sp.a,
+            b: sp.b,
+            kind: sp.kind,
+            ease: sp.ease,
+            knots: points,
+          ))
+        }
+        let end = renders.position(v => v == plan.end)
+        if end == none {
+          renders.push(plan.end)
+          end = renders.len() - 1
+        }
+        let topo = s3.topology(g)
+        let positions = renders.map(values => {
+          let gk = _geom3d(o, values)
+          assert(
+            s3.topology(gk) == topo,
+            message: "touying-scene: the tracked 3D object `"
+              + id
+              + "` changes its structure (number of points, primitives or colours) with its values; only positions may change.",
+          )
+          gk.pos
+        })
+        if positions.len() * g.pos.len() > max-geometry {
+          panic(
+            "touying-scene: tracked 3D object `"
+              + id
+              + "` needs "
+              + str(positions.len() * g.pos.len())
+              + " coordinates in one segment (limit "
+              + str(max-geometry)
+              + "). Use fewer samples (`config-scene(samples-per-second: ..)`, `surface(samples: ..)`) or raise `config-scene(max-geometry: ..)`.",
+          )
+        }
+        knots = (
+          kind: "geom",
+          interpolate: o.interpolate,
+          spans: spans,
+          end: end,
+          positions: positions,
+        )
+      }
+      let list = model.steps.at(id, default: ())
+      let label-records = ()
+      for (i, l) in g.labels.enumerate() {
+        let name = label-name + "-L" + str(i)
+        let size = measure(l.body)
+        label-records.push((
+          label: name,
+          w: size.width / 1pt,
+          h: size.height / 1pt,
+          depth: l.depth,
+        ))
+        world-layers.push(place(top + left, [#box(l.body)#label(name)]))
+      }
+      for tr in tracks { used-rates.push(tr.ease) }
+      records.push((
+        id: id,
+        label: label-name,
+        order: order,
+        pivot: (0, 0),
+        initial: _state-json(st, rnd: _round),
+        tracks: tracks
+          .filter(tr => not tr.prop.starts-with("val:"))
+          .map(tr => (
+            prop: tr.prop,
+            t0: tr.t0,
+            t1: tr.t1,
+            v0: tr.v0,
+            v1: tr.v1,
+            ease: tr.ease,
+          )),
+        knots: knots,
+        geom: (
+          pos: g.pos,
+          prims: g.prims,
+          mats: g.mats,
+          labels: label-records,
+          steps: list.map(x => (
+            kind: x.kind,
+            axis: x.axis,
+            angle: x.angle,
+            vec: x.vec,
+            pivot: x.pivot,
+          )),
+        ),
+      ))
+      continue
+    }
     let knots = none
     let body = if (
       o.type == "tracked" and tracks.any(tr => tr.prop.starts-with("val:"))
@@ -1571,7 +2066,30 @@
         }),
       knots: knots,
     ))
-    layers.push(place(top + left, [#body#label(label-name)]))
+    let layer = place(top + left, [#body#label(label-name)])
+    if o.at("behind", default: false) { back-layers.push(layer) } else {
+      layers.push(layer)
+    }
+  }
+  let camera = none
+  if has3d {
+    let tracks = if active { seg.tracks.at("@camera", default: ()) } else {
+      ()
+    }
+    for tr in tracks { used-rates.push(tr.ease) }
+    camera = (
+      initial: start.at("@camera").values,
+      tracks: tracks.map(tr => (
+        prop: tr.prop.slice(4),
+        t0: tr.t0,
+        t1: tr.t1,
+        v0: tr.v0,
+        v1: tr.v1,
+        ease: tr.ease,
+      )),
+      unit: model.cam.unit,
+      at: model.cam.at,
+    )
   }
   let morphs = if active { seg.morphs } else { () }
   for m in morphs { used-rates.push(m.ease) }
@@ -1580,7 +2098,9 @@
     rates.insert(name, model.rates.at(name).map(_round))
   }
   let record = (
-    schema: _schema-version,
+    schema: if has3d { 2 } else { _schema-version },
+    camera: camera,
+    world: if has3d { (label: dom + "-world") } else { none },
     scene: (
       key: key,
       dom: dom,
@@ -1622,6 +2142,13 @@
           top + left,
           [#box(width: 0pt, height: 0pt)#label("tys-data:" + data)],
         )
+        back-layers.join()
+        if has3d {
+          place(top + left, [#box(width: 0pt, height: 0pt)#label(
+              dom + "-world",
+            )])
+          world-layers.join()
+        }
         layers.join()
       },
     )#label(dom)]
@@ -1668,7 +2195,7 @@
       )
       model.segments.at(h - 1).end
     }
-    _render-static(self, spec, geo, states)
+    _render-static(self, spec, geo, model, states)
   } else {
     let (lifecycle, k) = if sub < start { ("before", 0) } else if sub <= last {
       ("active", sub - start)
@@ -1690,7 +2217,7 @@
       let states = if lifecycle == "before" {
         model.segments.first().start
       } else { model.segments.at(k).end }
-      _render-static(self, spec, geo, states)
+      _render-static(self, spec, geo, model, states)
     }
     if lifecycle == "before" { (self.methods.cover)(self: self, out) } else {
       out
@@ -1724,6 +2251,9 @@
 /// - handout (auto, int, str): State shown in handout and article mode:
 ///   `auto` (end), a segment number, or `"start"`.
 /// - clip (bool): Clip the scene to its box.
+/// - camera (none, dictionary): A 3D camera (`camera(..)`); needed for 3D
+///   objects. 3D objects are drawn in one layer (sorted by depth) above 2D
+///   objects with `behind: true` and below all other 2D objects.
 /// -> content
 #let scene(
   id: auto,
@@ -1737,6 +2267,7 @@
   alt: none,
   handout: auto,
   clip: false,
+  camera: none,
 ) = {
   assert(
     width != none and height != none,
@@ -1767,6 +2298,7 @@
     alt: alt,
     handout: handout,
     clip: clip,
+    camera: camera,
   )
   let n = _count-segments(timeline)
   touying-fn-wrapper(
