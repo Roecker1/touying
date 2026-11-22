@@ -1,0 +1,3 @@
+[submodule "dependencies/touying-exporter"]
+	path = dependencies/touying-exporter
+	url = https://github.com/Roecker1/touying-exporter.git
