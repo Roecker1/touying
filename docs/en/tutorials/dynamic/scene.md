@@ -204,7 +204,8 @@ A `tracked` object may return a 3D object, for example a surface whose shape dep
 
 **In the HTML export:**
 - drag a 3D scene to look around and use the mouse wheel to zoom;
-- <kbd>0</kbd> eases back to the scripted view, and changing the page resets it;
+- <kbd>0</kbd> eases back to the scripted view;
+- on the next (or previous) click of the same scene, the view turns back to the script smoothly over about a second while the animation plays; grab the scene again to stop it;
 - dragging never advances the slide;
 - the presenter window shows the same view.
 
