@@ -14,6 +14,13 @@ sidebar_position: 8
 
   `tracked(.., interpolate: true)` lets the HTML player blend neighbouring samples of a value-dependent drawing, so motion is smooth with about a third of the samples. The HTML export also has a presenter window (<kbd>P</kbd>) with the current and next page, speaker notes and a timer. `transform-matching` morphs equations symbol by symbol, with `key` to mark corresponding parts.
 
+  **Graphs, shape morphing and emphasis:**
+  - Native graph helpers: `axes`, `plot` (with gaps, `discontinuities` and clipping), `dot`, `tangent`, `secant`, `area`, `riemann`, `v-line`, `h-line`, `graph-path` and `c2p`. Tracked graphs interpolate smoothly.
+  - `shape` and `group` objects.
+  - `transform` morphs outlines point by point in HTML, with `mode: "fade"` for the crossfade.
+  - Annotations: `surround` and `brace`.
+  - Emphasis animations: `circumscribe`, `flash`, `focus-on`, `show-passing-flash` and `wiggle`.
+
   **3D scenes:** `scene(camera: camera(..))` adds 3D objects (`surface`, `curve3d`, `line3d`, `vector3d`, `point3d`, `polygon3d`, `axes3d`, `label3d`, `group3d`), camera moves (`move-camera`, `rotate-camera`, perspective with `focal`), 3D object animation (`rotate-3d`, `shift-3d`, tracked meshes) and drag-to-rotate in the HTML export. New config: `config-scene(max-geometry: ..)`.
 
 ## v0.8.1

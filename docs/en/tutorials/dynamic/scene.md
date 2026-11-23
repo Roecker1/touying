@@ -73,7 +73,10 @@ The scene above has three segments (two `click`s), so it occupies subslides 1–
 | --- | --- |
 | `obj(body, at: (0, 0), anchor: center + horizon)` | Any content; `anchor` is the point of the object placed at `at`. |
 | `cetz-obj(body)` | CeTZ draw commands in the scene's shared coordinate system (pass `cetz: cetz` to the scene). Every CeTZ object is drawn on a canvas spanning exactly the scene bounds, so all of them align; drawing outside the bounds is an error. |
-| `tracked(fn, ..values, interpolate: false)` | Like manim's `ValueTracker` + `always_redraw`: `fn` receives the current values and returns an `obj` or `cetz-obj`. |
+| `tracked(fn, ..values, interpolate: false)` | Like manim's `ValueTracker` + `always_redraw`: `fn` receives the current values and returns an object. |
+| `shape(paths: (..), labels: (..))` | Paths (`path(pts: ..)` or `path(segs: ..)`) and labels in scene coordinates, drawn natively. The graph helpers below return shapes. |
+| `group(..objs)` | Several objects drawn as one, for example a tangent and its dot returned by a `tracked` function. |
+| `surround(of: id)`, `brace(of: id, label: ..)` | A rectangle or circle around another object, or a curly brace along one of its sides; see "Emphasis". |
 
 Every object accepts `visible` and `pivot`:
 
@@ -113,7 +116,9 @@ Animations (each accepts `run-time` and `rate`):
 | `rotate-by(id, angle)`, `scale-by(id, factor)` | Rotate / scale around the pivot. |
 | `move-along(id, path)` | Follow an array of points or a function `t => (x, y)`. |
 | `indicate(id, scale: 1.2)` | Briefly enlarge. |
-| `transform(source, target)` | Crossfade while moving and scaling between both bounding boxes. |
+| `wiggle(id, scale: 1.1, angle: 3.6deg, n: 6)` | Rotate back and forth while briefly growing. |
+| `circumscribe(id)`, `flash(id)`, `focus-on(id)`, `show-passing-flash(id)` | Emphasis effects; see "Emphasis". |
+| `transform(source, target, mode: auto)` | Morph one outline into the other (HTML); see "Shape morphing". |
 | `transform-matching(source, target)` | Morph symbol by symbol (HTML): glyphs and identical shapes that occur in both move to their new places, parts marked with the same `key` move as groups, everything else fades. |
 | `set-value(id, name: value)` | Animate the values of a `tracked` object. |
 | `add(id)`, `remove(id)` | Show / hide instantly. |
@@ -140,9 +145,111 @@ dst: sc.obj($x^#n[$n$]$),
 
 Both objects belong to the morph while it runs, so other animations of either of them at the same time are an error. The rate must start at 0 and end at 1. The player falls back to a crossfade where the overlay could not look right: if a part is rotated or clipped, or if another object drawn between the two (in declaration order) overlaps them. In PDF the target simply replaces the source.
 
+### Shape morphing
+
+`transform` morphs outlines point by point in the HTML export, like manim's `ReplacementTransform`: a circle bends into a square, a graph into another graph, `$x^2$` into `$sin x$`. Paths and glyphs are paired by their place within each object, their outlines are aligned, and fill, stroke and stroke width blend. Parts without a partner grow from or shrink to a point. The source is gone afterwards.
+
+```typst
+objects: (
+  a: sc.obj(at: (3, 2), circle(radius: 1cm, fill: blue)),
+  b: sc.obj(at: (9, 2), rect(width: 2cm, height: 2cm, fill: red)),
+),
+timeline: (sc.transform("a", "b"),),
+```
+
+Which one to use:
+
+- `transform` changes shapes. It pairs parts by position, so for equations it gives a free-form morph.
+- `transform-matching` keeps symbols: equal glyphs move to their new places, which suits rearranging an equation.
+- `transform(.., mode: "fade")` crossfades the two objects while moving and scaling between their boxes.
+
+`transform` falls back to that crossfade, exactly as with `mode: "fade"`, when a morph could not look right:
+
+- either object is animated in another way while it morphs;
+- either object is not fully visible or fully drawn at its end of the morph;
+- the rate does not start at 0 and end at 1, such as `"there-and-back"`;
+- either object contains an image, a gradient or a dashed stroke;
+- another object drawn between the two overlaps them;
+- overlapping parts swap their stacking order.
+
+Single parts that cannot morph crossfade on their own, for example an open curve meeting a closed outline, or a stroke under non-uniform scaling. `mode: "shape"` makes the timeline rules above a compile error, so you learn when a morph would not happen. In PDF the target simply replaces the source.
+
 Two animations may not change the same property of the same object at the same time (for example two `shift`s): run them one after another.
 
 Rate functions are named as in manim: `"smooth"` (default), `"linear"`, `"rush-into"`, `"rush-from"`, `"there-and-back"`, `"ease-in-quad"`, `"ease-out-quad"`, `"ease-in-cubic"`, `"ease-out-cubic"`, `"ease-in-out-cubic"`, `"ease-in-out-sine"`; any function on `[0, 1]` works too.
+
+## Graphs
+
+Axes, plots and their companions are drawn natively, so no CeTZ is needed, and they work with every animation, including `create` and `transform`.
+
+```typst
+#let ax = sc.axes(x: (-3, 3, 1), y: (-2, 4, 1), at: (1, 0.5), size: (10, 6), labels: ($x$, $y$))
+#let f(x) = x * x / 2
+#sc.scene(
+  width: 12cm,
+  height: 7cm,
+  objects: (
+    ax: ax,
+    graph: sc.plot(ax, f),
+    area: sc.area(ax, f, domain: (0, 2)),
+    t: sc.tracked(x: -2, interpolate: true, v => sc.group(
+      sc.tangent(ax, f, v.x, df: x => x),
+      sc.dot(ax, (v.x, f(v.x))),
+    )),
+  ),
+  timeline: (
+    sc.play(sc.create("ax"), sc.create("graph")),
+    sc.fade-in("area"),
+    sc.click,
+    sc.fade-in("t"),
+    sc.set-value("t", x: 2, run-time: 3),
+  ),
+)
+```
+
+**Coordinates.** `axes(x: (min, max, step), y: (..), at:, size:)` places the plot rectangle with its bottom-left corner at `at`, in scene coordinates, and `size` scene units wide and tall. Each axis line lies at the other axis' 0 if it is in range, else at its edge. `c2p(ax, (x, y))` converts axis coordinates to scene coordinates, for `at:`, `move-to` and `move-along`. The mapping is fixed when the axes are made; it does not follow later animations of the axes object.
+
+| Helper | Description |
+| --- | --- |
+| `axes(.., ticks:, numbers:, grid:, tips:, labels:)` | `numbers: auto` labels every tick. It also takes an array of values or `(value, content)` pairs, or `(x: .., y: ..)`. |
+| `plot(ax, f, domain:, samples: 128, discontinuities: ())` | The graph of `f`, clipped to the plot rectangle. |
+| `dot(ax, (x, y), radius: 2.5pt)` | A dot. |
+| `tangent(ax, f, x, length: 2, df: none)` | The tangent at `x`, `length` scene units long on screen. `df` is the derivative; otherwise a central difference is used. |
+| `secant(ax, f, x1, x2, guides: false)` | The secant; `guides: true` adds the Δx and Δy legs and labels. |
+| `area(ax, f, domain: (a, b), g: none, neg-fill:)` | The region between `f` and `g` (default: the x axis). Parts where `f < g` use `neg-fill`. |
+| `riemann(ax, f, domain:, n:, mode: "left")` | `n` Riemann rectangles (`"left"`, `"right"` or `"mid"`). Rectangles below the axis use `neg-fill`. |
+| `v-line(ax, (x, y))`, `h-line(ax, (x, y))` | Dashed lines from the axes to a point. |
+| `graph-path(ax, f)` | A path along the graph, for `move-along`. |
+
+**Gaps.** `f` may return `none` where it is undefined, for example `x => if x < 0 { none } else { calc.sqrt(x) }`. The graph or area is split there. Typst errors such as a square root of a negative number cannot be caught, so guard them that way. `discontinuities: (0,)` splits a graph at those x values and never evaluates `f` there, for example for `x => 1 / x`.
+
+**Smooth trackers.** Every part of a graph is drawn with the same kind of segments, so its SVG structure stays the same while its numbers change. A `tracked` graph object with `interpolate: true` is then interpolated by the player across the whole animation; a tangent sweeping through slope 0 is no exception. The structure changes, and the player falls back to discrete samples, only when the number of parts changes:
+
+- a different `samples` or `n`;
+- ticks or numbers appearing;
+- a graph leaving the plot rectangle or crossing a gap;
+- a label whose text changes.
+
+## Emphasis
+
+**Annotations** are objects that stay. They show in PDF and handouts too, and `create` draws them in:
+
+- `surround(of: "eq", buff: 0.15, shape: "rect" | "circle", radius: 0pt)` draws a rectangle, optionally with rounded corners, or a circle around the object `eq`.
+- `brace(of: "eq", side: bottom, label: [..], gap: 0.15)` draws a curly brace along one side, with an optional label outside it.
+
+Both measure their target where it is laid out, with its initial values. They do not follow later animations of it. To emphasise part of an equation, make that part an object of its own and annotate it.
+
+**Effects** exist only while they play, in the HTML export:
+
+| Animation | Effect |
+| --- | --- |
+| `circumscribe(id, shape: "rect", time-width: 0.3, fade: false)` | An outline runs around the object once. `fade: true` draws it in, holds it and fades it out. |
+| `flash(id or (x, y), lines: 12, radius: auto)` | Lines flash outwards. |
+| `focus-on(id or (x, y))` | A spotlight shrinks onto the object or point. |
+| `show-passing-flash(id, time-width: 0.3)` | Only a window of the object's strokes runs along them; the object is invisible afterwards. Use it on a highlighted copy of a curve. |
+| `wiggle(id, scale: 1.1, angle: 3.6deg, n: 6)` | The object rotates back and forth while it briefly grows. |
+
+`circumscribe`, `flash` and `focus-on` measure their target when they start. An outline does not follow an object that moves during the effect, but a `circumscribe` played after a `shift` surrounds the shifted object. `create` and `show-passing-flash` both change how strokes are drawn, so they cannot overlap on the same object.
 
 ## 3D scenes
 
@@ -252,6 +359,6 @@ typst eval 'query(<touying-scene>).map(e => e.value)' --in slides.typ --input to
 ## Limitations
 
 - A scene must sit at the top level of a slide body, not inside `uncover`, `only` or `alternatives`; use `#pause` before it to reveal it later.
-- PDF shows partial opacity only approximately (paints are recoloured), and intermediate animation states only exist in the HTML export.
-- `create` draws solid, unfilled strokes; everything else fades in. `transform` and `transform-matching` move and crossfade parts; they do not morph one outline into another.
+- PDF shows partial opacity only approximately (paints are recoloured), and intermediate animation states only exist in the HTML export. PDF slides show the state at the end of each step; a step that ends part-drawn (a custom rate of `create` that does not end at 1) is shown fully drawn.
+- `create` draws solid, unfilled strokes; everything else fades in. Shape morphs crossfade parts they cannot morph; see "Shape morphing".
 - Tracked objects are re-rendered by Typst `samples-per-second` times per second, which costs compile time for long animations; `interpolate: true` needs far fewer samples.
