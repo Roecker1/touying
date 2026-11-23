@@ -66,6 +66,7 @@ For more information, a migration guide, and a separate one for theme authors, s
 
 - **Recommended workflow:** [open the Touying example in Tylina Web](https://tylina.github.io/app/?repo=https%3A%2F%2Fgithub.com%2Ftouying-typ%2Ftouying&provider=github&ref=main&load=dependencies&main=examples%2Fsimple.typ&file=examples%2Fsimple.typ&view=slides) to edit, present, and export it—including experimental editable PPTX
 - [Full documentation and references](https://touying-typ.github.io/) (English & Chinese)
+- [llms.txt](llms.txt) and [llms-full.txt](llms-full.txt) — a reference for LLM agents writing Touying decks
 - [Ask DeepWiki](https://deepwiki.com/touying-typ/touying) or [Ask Zread](https://zread.ai/touying-typ/touying) for AI-assisted help
 - [Gallery](https://github.com/touying-typ/touying/wiki) — slides made by the community
 - [Universe](https://typst.app/universe/search/?q=touying) — Diverse touying themes on Typst Universe
