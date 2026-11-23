@@ -53,7 +53,8 @@
     )),
     tan: sc.tangent(ax, f, x0, df: x => x, length: 5, stroke: 1.8pt + orange),
     p: sc.dot(ax, (x0, f(x0))),
-    formula: sc.tracked(h: 1.5, v => sc.obj(
+    // A changing number cannot be interpolated: sample it more often.
+    formula: sc.tracked(h: 1.5, samples-per-second: 30, v => sc.obj(
       at: (14.5, 7.5),
       anchor: left + horizon,
       $(f(1 + h) - f(1)) / h = #calc.round((f(x0 + v.h) - f(x0)) / v.h, digits: 2)$,

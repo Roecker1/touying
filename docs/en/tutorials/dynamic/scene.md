@@ -95,7 +95,9 @@ dot: sc.tracked(x: -2, interpolate: true, v => sc.cetz-obj({
 })),
 ```
 
-Use it only when the drawing changes **continuously** with its values. A drawing that rounds (`calc.floor(v.n)`), branches or switches at thresholds would show invented in-between shapes, so leave those at the default. Waits, plateaus of a rate function and instant updates (`run-time: 0`) are kept exact in both modes.
+`tracked(.., samples-per-second: 30)` overrides the rate for one object. Raise it for objects that cannot interpolate, such as a changing number, without making every other tracker heavier.
+
+Use `interpolate: true` only when the drawing changes **continuously** with its values. A drawing that rounds (`calc.floor(v.n)`), branches or switches at thresholds would show invented in-between shapes, so leave those at the default. Waits, plateaus of a rate function and instant updates (`run-time: 0`) are kept exact in both modes.
 
 ## Timeline
 

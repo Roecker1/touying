@@ -341,7 +341,8 @@ Every animation also takes `run-time:` and `rate:`.
 - In HTML, tracked objects are re-rendered by Typst at `config-scene(samples-per-second: ..)` (default 30).
 - With `interpolate: true` the player blends samples, so 10–12 per second look smooth. Use it only when the drawing
   changes continuously.
-- Leave text that shows rounded numbers at `interpolate: false`, as `label` above does.
+- Leave text that shows rounded numbers at `interpolate: false`, as `label` above does. Give such an object its own
+  rate, `tracked(.., samples-per-second: 30)`, so the number updates often without making other trackers heavier.
 
 ## 9. Scenes: graphs
 
