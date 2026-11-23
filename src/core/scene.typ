@@ -144,6 +144,10 @@
 /// so far fewer samples give smooth motion; only use it when the drawing
 /// changes continuously with the values (no rounding, thresholds or branches).
 ///
+/// - samples-per-second (auto, int, float): Samples per second for this
+///   object in the HTML export; `auto` uses `config-scene(samples-per-second:
+///   ..)`. Raise it for objects that cannot interpolate, such as a changing
+///   number, without making every other tracker heavier.
 /// -> dictionary
 #let tracked(
   fn,
@@ -151,13 +155,23 @@
   pivot: auto,
   interpolate: false,
   behind: false,
+  samples-per-second: auto,
   ..values,
 ) = {
   assert(
     values.pos().len() == 0,
     message: "touying-scene.tracked: values must be named, e.g. `tracked(x: 0, v => ..)`.",
   )
+  assert(
+    samples-per-second == auto
+      or (
+        (type(samples-per-second) == int or type(samples-per-second) == float)
+          and samples-per-second > 0
+      ),
+    message: "touying-scene.tracked: `samples-per-second` must be auto or a positive number.",
+  )
   (
+    samples-per-second: samples-per-second,
     kind: "touying-scene-obj",
     type: "tracked",
     fn: fn,
@@ -2589,6 +2603,12 @@
 // b belong to the next span. `end` is the state after all events at the end
 // of the segment. Knots are never dropped for having the values of their
 // neighbours: interpolating across a plateau needs both of its ends.
+// Samples per second of a tracked object: its own, or the scene config's.
+#let _fps-of(o, fps) = {
+  let own = o.at("samples-per-second", default: auto)
+  if own == auto { fps } else { float(own) }
+}
+
 #let _spans(model, seg, id, fps) = {
   let tracks = seg
     .tracks
@@ -2686,7 +2706,7 @@
       let g = _geom3d(o, st.values)
       let knots = none
       if o.type == "tracked" and tracks.any(tr => tr.prop.starts-with("val:")) {
-        let plan = _spans(model, seg, id, fps)
+        let plan = _spans(model, seg, id, _fps-of(o, fps))
         let renders = ()
         let spans = ()
         for sp in plan.spans {
@@ -2793,7 +2813,7 @@
     let body = if (
       o.type == "tracked" and tracks.any(tr => tr.prop.starts-with("val:"))
     ) {
-      let plan = _spans(model, seg, id, fps)
+      let plan = _spans(model, seg, id, _fps-of(o, fps))
       // Render every distinct value set once; knots refer to renders by index.
       let renders = ()
       let spans = ()
