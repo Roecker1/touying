@@ -19,6 +19,11 @@
 #import "../utils.typ"
 #import "animation.typ": touying-fn-wrapper
 #import "scene3d.typ" as s3
+#import "scene2d.typ" as s2
+#import "scene2d.typ": (
+  area, axes, brace, c2p, dot, graph-path, group, h-line, path, plot, riemann,
+  secant, shape, surround, tangent, v-line,
+)
 #import "scene3d.typ": (
   axes3d, camera, curve3d, group3d, label3d, line3d, point3d, polygon3d,
   surface, vector3d,
@@ -313,14 +318,173 @@
   rate: rate,
 )
 
-/// Morph `source` into `target`: crossfade while moving and scaling between
-/// their bounding boxes. `source` is invisible afterwards.
-#let transform(source, target, run-time: auto, rate: auto) = _anim(
-  "transform",
-  (source, target),
+#let _amber = rgb("#f59e0b")
+
+// Emphasis on an object (`target` names it) or at a point (scene
+// coordinates): the animation's targets are the object, or none.
+#let _emphasis(kind, target, run-time, rate, ..params) = {
+  let point = if type(target) == array { target } else { none }
+  assert(
+    type(target) == str or point != none,
+    message: "touying-scene."
+      + kind
+      + ": the target must be an object name or a point (x, y).",
+  )
+  _anim(
+    kind,
+    if point == none { (target,) } else { () },
+    run-time: run-time,
+    rate: rate,
+    point: point,
+    ..params,
+  )
+}
+
+/// Draw a passing outline around an object (manim's `Circumscribe`): a
+/// rectangle or circle whose stroke runs around it once. With `fade: true`
+/// the outline is drawn in, held and faded out instead. The outline is
+/// measured when the animation starts and does not follow later motion.
+#let circumscribe(
+  target,
+  shape: "rect",
+  buff: 0.15,
+  stroke: 2pt + _amber,
+  time-width: 0.3,
+  fade: false,
+  run-time: auto,
+  rate: auto,
+) = {
+  assert(
+    shape in ("rect", "circle"),
+    message: "touying-scene.circumscribe: `shape` must be \"rect\" or \"circle\".",
+  )
+  assert(
+    time-width > 0,
+    message: "touying-scene.circumscribe: `time-width` must be positive.",
+  )
+  _emphasis(
+    "circumscribe",
+    target,
+    run-time,
+    rate,
+    shape: shape,
+    buff: buff,
+    stroke: stroke,
+    time-width: time-width,
+    fade: fade,
+  )
+}
+
+/// Lines flashing outwards around an object or a point (manim's `Flash`).
+/// `radius` is where the lines start (`auto`: just outside the object) and
+/// `line-length` their length, both in scene units.
+#let flash(
+  target,
+  lines: 12,
+  radius: auto,
+  line-length: 0.3,
+  stroke: 2pt + _amber,
+  time-width: 1,
+  run-time: auto,
+  rate: auto,
+) = {
+  assert(
+    time-width > 0,
+    message: "touying-scene.flash: `time-width` must be positive.",
+  )
+  _emphasis(
+    "flash",
+    target,
+    run-time,
+    rate,
+    lines: lines,
+    radius: radius,
+    line-length: line-length,
+    stroke: stroke,
+    time-width: time-width,
+  )
+}
+
+/// A spotlight that shrinks onto an object or a point (manim's `FocusOn`).
+/// `radius` is its starting radius in scene units (`auto`: the scene's
+/// diagonal).
+#let focus-on(
+  target,
+  color: luma(40%).transparentize(70%),
+  radius: auto,
+  run-time: auto,
+  rate: auto,
+) = _emphasis(
+  "focus-on",
+  target,
+  run-time,
+  rate,
+  color: color,
+  radius: radius,
+)
+
+/// Show only a window of the object's strokes travelling along them (manim's
+/// `ShowPassingFlash`); the object is invisible afterwards. Use it on a
+/// highlighted copy of a curve. Fills and text are hidden meanwhile.
+#let show-passing-flash(target, time-width: 0.3, run-time: auto, rate: auto) = {
+  assert(
+    time-width > 0,
+    message: "touying-scene.show-passing-flash: `time-width` must be positive.",
+  )
+  _anim(
+    "show-passing-flash",
+    (target,),
+    run-time: run-time,
+    rate: rate,
+    time-width: time-width,
+  )
+}
+
+/// Wiggle an object: it rotates back and forth while it briefly grows
+/// (manim's `Wiggle`). A custom `rate` must start at 0 and end at 1.
+#let wiggle(
+  target,
+  scale: 1.1,
+  angle: 3.6deg,
+  n: 6,
+  run-time: auto,
+  rate: auto,
+) = _anim(
+  "wiggle",
+  (target,),
   run-time: run-time,
   rate: rate,
+  factor: scale,
+  angle: angle,
+  n: n,
 )
+
+/// Morph `source` into `target` (like manim's `ReplacementTransform`:
+/// `source` is invisible afterwards).
+///
+/// In the HTML export the outlines morph into each other point by point:
+/// paths and glyphs are paired by position, and parts without a partner grow
+/// from or shrink to a point. Where that is not possible (another animation
+/// of either object at the same time, partially drawn objects, images,
+/// gradients, ...) both objects crossfade while moving and scaling between
+/// their bounding boxes, as with `mode: "fade"`.
+///
+/// - mode (auto, str): `auto` morphs shapes where possible; `"shape"` also,
+///   but reports a compile error when the timeline rules it out; `"fade"`
+///   always crossfades.
+#let transform(source, target, mode: auto, run-time: auto, rate: auto) = {
+  assert(
+    mode in (auto, "shape", "fade"),
+    message: "touying-scene.transform: `mode` must be auto, \"shape\" or \"fade\".",
+  )
+  _anim(
+    "transform",
+    (source, target),
+    run-time: run-time,
+    rate: rate,
+    mode: mode,
+  )
+}
 
 /// Morph `source` into `target` symbol by symbol, like manim's
 /// `TransformMatchingShapes`: glyphs that occur in both move to their new
@@ -555,18 +719,170 @@
   (left: left, right: right, bottom: bottom, top: top)
 }
 
+// A length (screen size) or a number of scene units, in pt.
+#let _len(geo, v) = if type(v) == length { _pt(v) } else { float(v) * geo.u }
+
+#let _kappa = 0.5522847498307936
+
+// Cubic segments (pt, y down) of a shape leaf.
+#let _leaf-segs(geo, leaf) = if "circle" in leaf {
+  let (c, r) = leaf.circle
+  let (cx, cy) = _pos(geo, c)
+  let r = _len(geo, r)
+  let k = r * _kappa
+  (
+    ((cx + r, cy), (cx + r, cy + k), (cx + k, cy + r), (cx, cy + r)),
+    ((cx, cy + r), (cx - k, cy + r), (cx - r, cy + k), (cx - r, cy)),
+    ((cx - r, cy), (cx - r, cy - k), (cx - k, cy - r), (cx, cy - r)),
+    ((cx, cy - r), (cx + k, cy - r), (cx + r, cy - k), (cx + r, cy)),
+  )
+} else {
+  leaf.segs.map(sg => sg.map(q => _pos(geo, q)))
+}
+
+#let _stroke-width(st) = if st == none { 0.0 } else {
+  let t = stroke(st).thickness
+  if t == auto { 1.0 } else { _pt(t) }
+}
+
+// Draw a shape: every leaf is its own curve, placed at its first point, with
+// cubic segments only and a straight close, so its SVG structure does not
+// depend on the coordinates (see scene2d.typ).
+#let _resolve-shape(spec, geo, o) = {
+  let (x0, y0, x1, y1) = (calc.inf, calc.inf, -calc.inf, -calc.inf)
+  let items = ()
+  for leaf in o.paths {
+    let segs = _leaf-segs(geo, leaf)
+    if segs.len() == 0 { continue }
+    // Control points bound a cubic (convex hull); pad for miter joins.
+    let pad = _stroke-width(leaf.stroke) * 2
+    for sg in segs {
+      for (x, y) in sg {
+        x0 = calc.min(x0, x - pad)
+        y0 = calc.min(y0, y - pad)
+        x1 = calc.max(x1, x + pad)
+        y1 = calc.max(y1, y + pad)
+      }
+    }
+    let (px, py) = segs.first().first()
+    let rel(q) = ((q.at(0) - px) * 1pt, (q.at(1) - py) * 1pt)
+    let parts = (curve.move((0pt, 0pt)),)
+    for sg in segs {
+      parts.push(curve.cubic(rel(sg.at(1)), rel(sg.at(2)), rel(sg.at(3))))
+    }
+    if leaf.closed { parts.push(curve.close(mode: "straight")) }
+    items.push(place(
+      top + left,
+      dx: px * 1pt,
+      dy: py * 1pt,
+      curve(fill: leaf.fill, stroke: leaf.stroke, ..parts),
+    ))
+  }
+  for l in o.labels {
+    let size = measure(l.body)
+    let (w, h) = (size.width / 1pt, size.height / 1pt)
+    let (ax, ay) = _pos(geo, l.at)
+    let (fx, fy) = _align-factors(l.at("anchor", default: center + horizon))
+    let (lx, ly) = (ax - w * fx, ay - h * fy)
+    x0 = calc.min(x0, lx)
+    y0 = calc.min(y0, ly)
+    x1 = calc.max(x1, lx + w)
+    y1 = calc.max(y1, ly + h)
+    items.push(place(top + left, dx: lx * 1pt, dy: ly * 1pt, l.body))
+  }
+  if x0 > x1 { (x0, y0, x1, y1) = (0.0, 0.0, 0.0, 0.0) }
+  (
+    layer: box(width: geo.w * 1pt, height: geo.h * 1pt, items.join()),
+    bbox: (x: x0, y: y0, w: x1 - x0, h: y1 - y0),
+  )
+}
+
 // Resolve a (non-tracked) object to its geometry: the layer content plus
-// helpers. `o` is an obj or cetz-obj dictionary.
+// helpers. `o` is an obj, cetz-obj, shape or group dictionary.
 #let _resolve(spec, geo, id, o) = {
   assert(
     type(o) == dictionary
       and o.at("kind", default: none) == "touying-scene-obj"
-      and o.type in ("content", "cetz"),
+      and o.type in ("content", "cetz", "shape", "group", "annot"),
     message: "touying-scene: object `"
       + id
-      + "` must be `obj(..)` or `cetz-obj(..)`, got "
+      + "` must be `obj(..)`, `cetz-obj(..)`, `shape(..)` or `group(..)`, got "
       + repr(o),
   )
+  if o.type == "annot" {
+    // Measure the target at its untransformed layout (initial values).
+    let chain = o.at("chain", default: ()) + (id,)
+    assert(
+      o.of in spec.objects,
+      message: "touying-scene: `"
+        + id
+        + "` refers to the unknown object `"
+        + o.of
+        + "`.",
+    )
+    assert(
+      o.of not in chain,
+      message: "touying-scene: annotations refer to each other in a cycle: "
+        + (chain + (o.of,)).join(" -> "),
+    )
+    let t = spec.objects.at(o.of)
+    let inner = if t.type == "tracked" { (t.fn)(t.values) } else { t }
+    assert(
+      not s3.is-3d(inner),
+      message: "touying-scene: `"
+        + id
+        + "` cannot annotate the 3D object `"
+        + o.of
+        + "`.",
+    )
+    let r = _resolve(
+      spec,
+      geo,
+      o.of,
+      if inner.type == "annot" { inner + (chain: chain) } else { inner },
+    )
+    let b = (r.bbox)()
+    let box-scene = (
+      left: geo.xmin + b.x / geo.u,
+      right: geo.xmin + (b.x + b.w) / geo.u,
+      top: geo.ymax - b.y / geo.u,
+      bottom: geo.ymax - (b.y + b.h) / geo.u,
+    )
+    return _resolve(spec, geo, id, s2._annot-shape(o, box-scene, geo.u))
+  }
+  if o.type in ("shape", "group") {
+    let (layer, b) = if o.type == "shape" {
+      let r = _resolve-shape(spec, geo, o)
+      (r.layer, r.bbox)
+    } else {
+      let rs = o.children.map(c => _resolve(spec, geo, id, c))
+      let boxes = rs.map(r => (r.bbox)())
+      let (x0, y0, x1, y1) = (0.0, 0.0, 0.0, 0.0)
+      if boxes.len() > 0 {
+        x0 = calc.min(..boxes.map(b => b.x))
+        y0 = calc.min(..boxes.map(b => b.y))
+        x1 = calc.max(..boxes.map(b => b.x + b.w))
+        y1 = calc.max(..boxes.map(b => b.y + b.h))
+      }
+      (
+        box(
+          width: geo.w * 1pt,
+          height: geo.h * 1pt,
+          rs.map(r => place(top + left, r.layer)).join(),
+        ),
+        (x: x0, y: y0, w: x1 - x0, h: y1 - y0),
+      )
+    }
+    let pivot = if o.pivot == auto { (b.x + b.w / 2, b.y + b.h / 2) } else {
+      _pos(geo, o.pivot)
+    }
+    return (
+      layer: layer,
+      anchor: none,
+      pivot: () => pivot,
+      bbox: () => b,
+    )
+  }
   if o.type == "content" {
     let size = measure(o.body, width: geo.w * 1pt)
     let (w, h) = (size.width / 1pt, size.height / 1pt)
@@ -695,9 +1011,27 @@
 // Timeline compiler
 // ---------------------------------------------------------------------------
 
-#let _props = ("opacity", "tx", "ty", "rot", "scale", "draw", "reveal")
+#let _props = (
+  "opacity",
+  "tx",
+  "ty",
+  "rot",
+  "scale",
+  "draw",
+  "reveal",
+  "pass",
+)
 
-#let _intro-types = ("fade-in", "create", "write", "add")
+// Emphasis animations that draw an auxiliary object.
+#let _aux-types = ("circumscribe", "flash", "focus-on")
+
+#let _intro-types = (
+  "fade-in",
+  "create",
+  "write",
+  "add",
+  "show-passing-flash",
+)
 
 // Whether the first animation of `id` introduces it (manim semantics: an
 // object appears when it is first played in).
@@ -728,6 +1062,7 @@
   scale: 1.0,
   draw: 1.0,
   reveal: 1.0,
+  pass: -1.0,
   values: if o.type == "tracked" { o.values } else { (:) },
 )
 
@@ -848,6 +1183,21 @@
     } else { o.visible }
     state.insert(id, _initial-state(o, visible))
   }
+  // Auxiliary objects of emphasis animations (`@e1`, ...), allocated before
+  // any segment is built so every segment's states know them.
+  let aux-list = ()
+  for e in _normalise(spec.timeline) {
+    if e.kind != "touying-scene-play" { continue }
+    for a in e.anims {
+      if type(a) == dictionary and a.at("type", default: none) in _aux-types {
+        let aid = "@e" + str(aux-list.len() + 1)
+        aux-list.push(aid)
+        state.insert(aid, _initial-state((type: "shape"), false))
+      }
+    }
+  }
+  let aux-seen = 0
+  let aux-entries = (:)
   let has-camera = spec.camera != none
   let cam = if has-camera {
     assert(
@@ -875,6 +1225,7 @@
     )
   } else { none }
   let is3d = (:)
+  for aid in aux-list { is3d.insert(aid, false) }
   for (id, o) in objects {
     is3d.insert(id, _is3d(o))
     if is3d.at(id) {
@@ -888,6 +1239,7 @@
   }
   let steps = (:) // id -> 3D transform steps
   let ev = -1 // event index (timeline order)
+  let shape-morphs = () // transform candidates for shape morphing
 
   let segments = ()
   let seg = (start: state, tracks: (:), morphs: (), duration: 0.0)
@@ -964,7 +1316,7 @@
         ) { entry.run-time } else { default-run-time })
         let rate = if a.rate != auto { a.rate } else if a.type == "indicate" {
           "there-and-back"
-        } else if a.type == "rotate-camera" { "linear" } else if (
+        } else if a.type in ("rotate-camera", "wiggle") { "linear" } else if (
           entry.rate != auto
         ) { entry.rate } else { default-rate }
         let ease = if type(rate) == str {
@@ -994,6 +1346,36 @@
           rates.insert("linear", _sample-rate(rate-functions.linear))
         }
         let table = rates.at(ease)
+        if a.type == "wiggle" {
+          // Dedicated tables (manim's wiggle), composed with the rate.
+          assert(
+            calc.abs(table.first()) <= 1e-6
+              and calc.abs(table.last() - 1) <= 1e-6,
+            message: "touying-scene.wiggle: the rate must start at 0 and end at 1 (got `"
+              + ease
+              + "`).",
+          )
+          let n = a.params.n
+          let name = "wiggle-" + str(n) + "-" + ease
+          if name not in rates {
+            rates.insert(
+              name,
+              range(257).map(i => {
+                let p = _ease-eval(table, i / 256)
+                float(
+                  (rate-functions.there-and-back)(p)
+                    * calc.sin(n * calc.pi * p),
+                )
+              }),
+            )
+            rates.insert(
+              name + "-scale",
+              range(257).map(i => float(
+                (rate-functions.there-and-back)(_ease-eval(table, i / 256)),
+              )),
+            )
+          }
+        }
         let t0 = cursor + i * float(entry.lag-ratio) * rt
         let t1 = t0 + rt
         play-end = calc.max(play-end, t1)
@@ -1012,13 +1394,15 @@
           t1: t1,
           extra: (:),
         ) = {
-          let key = id + "/" + prop
+          // `create` and passing flashes share the stroke dash state.
+          let channel = if prop in ("draw", "pass") { "dash" } else { prop }
+          let key = id + "/" + channel
           if last-end.at(key, default: -1.0) > t0 + _eps {
             panic(
               "touying-scene: overlapping animations on `"
                 + id
                 + "` ("
-                + prop
+                + channel
                 + ") at "
                 + str(calc.round(t0, digits: 3))
                 + "s. Run them one after another, or animate different properties.",
@@ -1062,10 +1446,232 @@
           t1: at,
         )
 
-        let id = a.targets.first()
-        let st = state.at(id)
         let ty = a.type
-        if ty == "fade-in" {
+        // Emphasis with an auxiliary object: it is the animated object.
+        let aux-id = none
+        if ty in _aux-types {
+          aux-seen += 1
+          aux-id = "@e" + str(aux-seen)
+          aux-entries.insert(aux-id, (
+            kind: ty,
+            target: a.targets.at(0, default: none),
+            point: a.params.at("point", default: none),
+            params: a.params,
+            seg: segments.len(),
+            t0: t0,
+            t1: t1,
+            ev: ev,
+          ))
+        }
+        let id = if aux-id != none { aux-id } else { a.targets.first() }
+        let st = state.at(id)
+        if ty == "circumscribe" {
+          let w = float(a.params.time-width)
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "opacity",
+            1,
+            t0,
+          )
+          if a.params.fade {
+            let tm = (t0 + t1) / 2
+            (seg, state, last-end) = push(
+              seg,
+              state,
+              last-end,
+              id,
+              "draw",
+              0,
+              1,
+              t1: tm,
+            )
+            (seg, state, last-end) = push(
+              seg,
+              state,
+              last-end,
+              id,
+              "opacity",
+              1,
+              0,
+              t0: tm,
+            )
+          } else {
+            (seg, state, last-end) = push(
+              seg,
+              state,
+              last-end,
+              id,
+              "pass",
+              0,
+              1,
+              extra: (w: w),
+            )
+            (seg, state, last-end) = instant(
+              seg,
+              state,
+              last-end,
+              id,
+              "opacity",
+              0,
+              t1,
+            )
+            (seg, state, last-end) = instant(
+              seg,
+              state,
+              last-end,
+              id,
+              "pass",
+              -1,
+              t1,
+            )
+          }
+        } else if ty == "flash" {
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "opacity",
+            1,
+            t0,
+          )
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "pass",
+            0,
+            1,
+            extra: (w: float(a.params.time-width)),
+          )
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "opacity",
+            0,
+            t1,
+          )
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "pass",
+            -1,
+            t1,
+          )
+        } else if ty == "focus-on" {
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "opacity",
+            0,
+            1,
+          )
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "scale",
+            1,
+            0,
+          )
+          for (prop, v) in (("opacity", 0), ("scale", 1)) {
+            (seg, state, last-end) = instant(
+              seg,
+              state,
+              last-end,
+              id,
+              prop,
+              v,
+              t1,
+            )
+          }
+        } else if ty == "show-passing-flash" {
+          if st.opacity < 1 {
+            (seg, state, last-end) = instant(
+              seg,
+              state,
+              last-end,
+              id,
+              "opacity",
+              1,
+              t0,
+            )
+          }
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "pass",
+            0,
+            1,
+            extra: (w: float(a.params.time-width)),
+          )
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "opacity",
+            0,
+            t1,
+          )
+          (seg, state, last-end) = instant(
+            seg,
+            state,
+            last-end,
+            id,
+            "pass",
+            -1,
+            t1,
+          )
+        } else if ty == "wiggle" {
+          let deg = s3._deg(a.params.angle)
+          let name = "wiggle-" + str(a.params.n) + "-" + ease
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "rot",
+            st.rot,
+            st.rot + deg,
+            ease: name,
+          )
+          (seg, state, last-end) = push(
+            seg,
+            state,
+            last-end,
+            id,
+            "scale",
+            st.scale,
+            st.scale * a.params.factor,
+            ease: name + "-scale",
+          )
+          // Restore exactly (tables end at 0 only up to rounding).
+          for (prop, v) in (("rot", st.rot), ("scale", st.scale)) {
+            (seg, state, last-end) = instant(
+              seg,
+              state,
+              last-end,
+              id,
+              prop,
+              v,
+              t1,
+            )
+          }
+        } else if ty == "fade-in" {
           if a.params.shift != none {
             let (dx, dy) = _vec(geo, a.params.shift)
             (seg, state, last-end) = push(
@@ -1285,6 +1891,7 @@
             v0: 0.0,
             v1: 1.0,
             ease: ease,
+            ev: ev,
             points: pts,
           ))
           seg.tracks.insert(id, tracks)
@@ -1300,6 +1907,22 @@
           }
         } else if ty == "transform" {
           let target = a.targets.at(1)
+          assert(
+            target != id,
+            message: "touying-scene.transform: source and target must differ.",
+          )
+          if a.params.at("mode", default: auto) != "fade" {
+            shape-morphs.push((
+              source: id,
+              target: target,
+              t0: t0,
+              t1: t1,
+              ease: ease,
+              ev: ev,
+              seg: segments.len(),
+              mode: a.params.at("mode", default: auto),
+            ))
+          }
           let su = state.at(target)
           let ra = _resolve-at(spec, geo, id, objects.at(id), st.values)
           let rb = _resolve-at(spec, geo, target, objects.at(target), su.values)
@@ -1427,6 +2050,7 @@
             }
           }
           seg.morphs.push((
+            kind: "matching",
             source: id,
             target: target,
             t0: t0,
@@ -1623,8 +2247,200 @@
     }
     steps.insert(id, list)
   }
-  (segments: segments, rates: rates, steps: steps, cam: cam, is3d: is3d)
+  // Shape morphs: a `transform` is drawn as a point-by-point morph in HTML
+  // only if nothing else changes either object meanwhile (the crossfade
+  // tracks stay authoritative; the morph is another rendering of them).
+  for c in shape-morphs {
+    let sg = segments.at(c.seg)
+    let table = rates.at(c.ease)
+    let fail(reason) = if c.mode == "shape" {
+      panic(
+        "touying-scene.transform(\""
+          + c.source
+          + "\", \""
+          + c.target
+          + "\", mode: \"shape\"): "
+          + reason
+          + ". Use mode: auto or \"fade\" to crossfade instead.",
+      )
+    } else { reason }
+    let reason = none
+    if (
+      calc.abs(table.first()) > 1e-6 or calc.abs(table.last() - 1) > 1e-6
+    ) {
+      reason = fail("the rate must start at 0 and end at 1")
+    }
+    for obj in (c.source, c.target) {
+      if reason != none { break }
+      if is3d.at(obj) {
+        reason = fail("`" + obj + "` is a 3D object")
+        break
+      }
+      for tr in sg.tracks.at(obj, default: ()) {
+        if tr.at("ev", default: -1) == c.ev { continue }
+        let inside = tr.t1 > c.t0 + _eps and tr.t0 < c.t1 - _eps
+        let instant-inside = (
+          tr.t1 - tr.t0 <= _eps and tr.t0 > c.t0 + _eps and tr.t0 < c.t1 - _eps
+        )
+        let after-at-start = (
+          calc.abs(tr.t0 - c.t0) <= _eps and tr.at("ev", default: -1) > c.ev
+        )
+        if inside or instant-inside or after-at-start {
+          reason = fail(
+            "`" + obj + "` is animated (" + tr.prop + ") while it morphs",
+          )
+          break
+        }
+      }
+    }
+    let partial = (segments: segments, rates: rates)
+    let s0 = _state-at(partial, sg, c.source, c.t0, before-ev: c.ev)
+    let d1 = _state-at(partial, sg, c.target, c.t1, before-ev: c.ev + 1)
+    if reason == none {
+      for (name, st) in (("source", s0), ("target", d1)) {
+        if (
+          calc.abs(st.opacity - 1) > 1e-6
+            or calc.abs(st.draw - 1) > 1e-6
+            or calc.abs(st.reveal - 1) > 1e-6
+            or st.at("pass", default: -1.0) >= 0
+        ) {
+          reason = fail(
+            "the "
+              + name
+              + " is not fully visible and drawn at its end of the morph",
+          )
+          break
+        }
+      }
+    }
+    if (
+      reason == none
+        and objects.at(c.source).at("behind", default: false)
+          != objects.at(c.target).at("behind", default: false)
+    ) {
+      reason = fail("source and target are on different layers (`behind`)")
+    }
+    if reason != none { continue }
+    let seg = segments.at(c.seg)
+    seg.morphs.push((
+      kind: "shape",
+      source: c.source,
+      target: c.target,
+      t0: c.t0,
+      t1: c.t1,
+      ease: c.ease,
+      src: s0,
+      dst: d1,
+      strict: c.mode == "shape",
+    ))
+    segments.at(c.seg) = seg
+  }
+  // Auxiliary objects: geometry from the target as it is when the animation
+  // starts (values and transform at that event), mapped to scene coordinates.
+  let aux = (:)
+  let partial = (segments: segments, rates: rates)
+  let to-scene((x, y)) = (geo.xmin + x / geo.u, geo.ymax - y / geo.u)
+  for (aid, e) in aux-entries {
+    let q = e.params
+    let (centre, half, scale, corners) = if e.target != none {
+      let sg = segments.at(e.seg)
+      let st = _state-at(partial, sg, e.target, e.t0, before-ev: e.ev)
+      let r = _resolve-at(spec, geo, e.target, objects.at(e.target), st.values)
+      let b = (r.bbox)()
+      let (px, py) = (r.pivot)()
+      let ang = -st.rot * 1deg
+      let k = st.scale
+      let mp((x, y)) = {
+        let (qx, qy) = ((x - px) * k, (y - py) * k)
+        to-scene((
+          px + st.tx + qx * calc.cos(ang) - qy * calc.sin(ang),
+          py + st.ty + qx * calc.sin(ang) + qy * calc.cos(ang),
+        ))
+      }
+      let pad = if e.kind == "circumscribe" and k > 1e-9 {
+        q.buff * geo.u / k
+      } else { 0 }
+      (
+        mp((b.x + b.w / 2, b.y + b.h / 2)),
+        calc.max(b.w, b.h) / 2 * k / geo.u,
+        k,
+        (
+          (b.x - pad, b.y - pad),
+          (b.x + b.w + pad, b.y - pad),
+          (b.x + b.w + pad, b.y + b.h + pad),
+          (b.x - pad, b.y + b.h + pad),
+        ).map(mp)
+          + if e.kind == "circumscribe" and q.shape == "circle" {
+            (
+              (
+                calc.sqrt(b.w * b.w + b.h * b.h) / 2 * k / geo.u + q.buff,
+              ),
+            )
+          } else { () },
+      )
+    } else {
+      (to-scene(_pos(geo, e.point)), 0.0, 1.0, ())
+    }
+    let o = if e.kind == "circumscribe" {
+      let segs = if q.shape == "circle" {
+        s2._circle-segs(centre, corners.last().first())
+      } else {
+        s2._polyline(corners + (corners.first(),))
+      }
+      shape(paths: (path(segs: segs, closed: true, stroke: q.stroke),))
+    } else if e.kind == "flash" {
+      let r0 = if q.radius != auto { float(q.radius) } else {
+        half + 0.1
+      }
+      shape(
+        paths: range(q.lines).map(i => {
+          let a = 360deg * i / q.lines
+          let (dx, dy) = (calc.cos(a), calc.sin(a))
+          path(
+            pts: (
+              (centre.at(0) + dx * r0, centre.at(1) + dy * r0),
+              (
+                centre.at(0) + dx * (r0 + q.line-length),
+                centre.at(1) + dy * (r0 + q.line-length),
+              ),
+            ),
+            stroke: q.stroke,
+          )
+        }),
+      )
+    } else {
+      let r = if q.radius != auto { float(q.radius) } else {
+        calc.sqrt(geo.w * geo.w + geo.h * geo.h) / geo.u
+      }
+      shape(paths: (
+        (
+          segs: s2._circle-segs(centre, r),
+          closed: true,
+          fill: q.color,
+          stroke: none,
+        ),
+      ))
+    }
+    aux.insert(aid, o + (visible: false))
+  }
+
+  // Morphs in timeline order (the player applies them in record order).
+  segments = segments.map(sg => {
+    sg.morphs = sg.morphs.sorted(key: m => m.t0)
+    sg
+  })
+  (
+    segments: segments,
+    rates: rates,
+    steps: steps,
+    cam: cam,
+    is3d: is3d,
+    aux: aux,
+  )
 }
+
+// User objects in declaration order, then auxiliary (emphasis) objects.
+#let _all-objects(spec, model) = spec.objects + model.at("aux", default: (:))
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -1709,7 +2525,7 @@
 // Layers: 2D objects with `behind: true`, the 3D world, other 2D objects.
 #let _render-static(self, spec, geo, model, states) = {
   let draw-2d(behind) = {
-    for (id, o) in spec.objects {
+    for (id, o) in _all-objects(spec, model) {
       if model.is3d.at(id) or o.at("behind", default: false) != behind {
         continue
       }
@@ -1739,7 +2555,7 @@
   )
 }
 
-#let _round(x) = calc.round(x, digits: 4)
+#let _round(x) = calc.round(x, digits: 6)
 
 #let _state-json(st, rnd: _round) = {
   let out = (
@@ -1754,6 +2570,7 @@
   for (k, v) in st {
     if k.starts-with("step:") { out.insert(k, rnd(v)) }
   }
+  if st.at("pass", default: -1.0) >= 0 { out.insert("pass", rnd(st.pass)) }
   out
 }
 
@@ -1859,7 +2676,8 @@
   let world-layers = ()
   let used-rates = ()
   let max-geometry = config.at("max-geometry", default: 300000)
-  for (order, (id, o)) in spec.objects.pairs().enumerate() {
+  let v3 = false
+  for (order, (id, o)) in _all-objects(spec, model).pairs().enumerate() {
     let st = start.at(id)
     let tracks = if active { seg.tracks.at(id, default: ()) } else { () }
     if st.opacity <= 1e-6 and tracks.len() == 0 { continue }
@@ -2042,6 +2860,9 @@
       (r.pivot)().map(_round)
     } else { (0, 0) }
     for tr in tracks { used-rates.push(tr.ease) }
+    if id.starts-with("@") or tracks.any(tr => tr.prop == "pass") {
+      v3 = true
+    }
     records.push((
       id: id,
       label: label-name,
@@ -2062,6 +2883,7 @@
           if tr.prop == "path" {
             rec.insert("points", tr.points.map(p => p.map(_round)))
           }
+          if "w" in tr { rec.insert("w", tr.w) }
           rec
         }),
       knots: knots,
@@ -2098,7 +2920,10 @@
     rates.insert(name, model.rates.at(name).map(_round))
   }
   let record = (
-    schema: if has3d { 2 } else { _schema-version },
+    // Schema 3: morph kinds and snapshots, passing flashes, emphasis objects.
+    schema: if (
+      morphs.len() > 0 or v3
+    ) { 3 } else if has3d { 2 } else { _schema-version },
     camera: camera,
     world: if has3d { (label: dom + "-world") } else { none },
     scene: (
@@ -2114,13 +2939,22 @@
     duration: if active { _round(seg.duration) } else { 0 },
     rates: rates,
     objects: records,
-    morphs: morphs.map(m => (
-      source: m.source,
-      target: m.target,
-      t0: _round(m.t0),
-      t1: _round(m.t1),
-      ease: m.ease,
-    )),
+    morphs: morphs.map(m => {
+      let out = (
+        kind: m.kind,
+        source: m.source,
+        target: m.target,
+        t0: _round(m.t0),
+        t1: _round(m.t1),
+        ease: m.ease,
+      )
+      if m.kind == "shape" {
+        out.insert("src", _state-json(m.src))
+        out.insert("dst", _state-json(m.dst))
+        out.insert("strict", m.strict)
+      }
+      out
+    }),
   )
   // The record travels inside the page's SVG as the label of an empty group,
   // so the exporter needs no separate query and a hidden scene carries no
