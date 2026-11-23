@@ -1,0 +1,607 @@
+# Touying: complete reference for LLM agents
+
+> Touying is a Typst package for presentation slides (like LaTeX Beamer). This file is everything an agent needs to
+> write a correct deck: the document skeleton, slides and themes, animations, configuration, output modes, and the
+> manim-style scene system (`touying-scene`) for animated maths, graphs and 3D, exported to a self-contained HTML
+> file by touying-exporter.
+>
+> Every complete example in this file compiles with Typst 0.15. When in doubt, compile and look at the pages.
+
+Contents:
+1. Rules that prevent most errors
+2. Skeleton
+3. Slides and structure
+4. Themes
+5. Step-by-step reveals (subslides)
+6. Configuration
+7. Speaker notes, output modes, handouts
+8. Scenes: manim-style animation
+9. Scenes: graphs
+10. Scenes: morphing
+11. Scenes: emphasis and annotations
+12. Scenes: 3D
+13. HTML export
+14. Errors and fixes
+15. Checklist before handing a deck over
+
+---------------------------------------------------------------------------------------------------------------------
+
+## 1. Rules that prevent most errors
+
+1. Import, then apply a theme with a show rule, then write content:
+   `#import "@preview/touying:0.8.1": *`, `#import themes.simple: *`, `#show: simple-theme.with(..)`.
+2. Headings create slides. With most themes `= Section` starts a section and `== Title` starts a slide. Text
+   before the first heading after the show rule lands on an untitled slide.
+3. All configuration goes into the theme call as `config-*(..)` arguments:
+   `#show: metropolis-theme.with(aspect-ratio: "16-9", config-info(title: [..]), config-common(..))`.
+4. `#pause` and `#meanwhile` are markers in the slide body. They do not work inside `context`, inside layout
+   functions such as `grid` cells, or inside function calls that are not touying-aware. Use the callback style there
+   (section 5).
+5. Scenes (`touying-scene`) are in the development version of touying (branch `feature/animations`), not yet in
+   `@preview/touying:0.8.1`. Import that checkout by path:
+   `#import "/lib.typ": *` (compile with `--root` at the checkout) or `#import "path/to/touying/lib.typ": *`.
+6. Typst has no duration type: times in scenes are plain numbers of seconds. Scene coordinates are plain numbers
+   (y up); lengths such as `1cm` are layout distances from the scene's top-left corner (y down).
+7. Object names in scenes may only contain letters, digits, `-` and `_`.
+8. Compile to check: `typst compile slides.typ` (add `--root <dir>` when importing by absolute path), and render a
+   few pages to PNG to look at them: `typst compile slides.typ "page-{p}.png" --ppi 60`.
+
+## 2. Skeleton
+
+```typst
+#import "@preview/touying:0.8.1": *
+#import themes.metropolis: *
+
+#show: metropolis-theme.with(
+  aspect-ratio: "16-9",
+  config-info(
+    title: [Measuring the Hubble Constant],
+    subtitle: [With gravitational lensing],
+    author: [A. Author],
+    date: datetime.today(),
+    institution: [Some University],
+  ),
+)
+
+#title-slide()
+
+= Introduction
+
+== Motivation
+
+- Tension between early- and late-universe measurements.
+- #pause A third method helps.
+
+== The key equation
+
+$ H_0 = v / d $
+
+#focus-slide[Questions?]
+```
+
+## 3. Slides and structure
+
+- `= Heading` (level 1) is a section. Most themes show a section slide automatically.
+- `== Heading` (level 2) is a slide title, and the content until the next heading is that slide.
+- `config-common(slide-level: n)` sets how many heading levels create slides (default 2; dewdrop uses 3).
+- `#slide[..]` creates a slide explicitly; `#slide(title: [..])[..]` is not portable across themes, so prefer
+  headings for titles.
+- `#pagebreak()` or a bare `---` line starts a new slide with the same title.
+- Heading labels: `<touying:hidden>` (no section slide, unnumbered, not in the outline), `<touying:skip>` (no section
+  slide), `<touying:unnumbered>`, `<touying:unoutlined>`, `<touying:unbookmarked>`, `<touying:handout>` (slide only
+  in handouts).
+- Outline: `#components.adaptive-columns(outline(title: none, indent: 1em))`, or `#outline-slide()` in themes that
+  have it.
+- Numbering: `#set heading(numbering: "1.1")`.
+- Columns: `#cols[left][right]` or `#cols(columns: (2fr, 1fr), gutter: 1em)[..][..]`. `side-by-side` is an alias.
+- `#alert[..]` emphasises text in the theme's colour.
+- `#show: appendix` before the appendix section freezes the slide counter.
+- Multi-file decks: `#include "part.typ"` works; each included file needs `#import "@preview/touying:0.8.1": *` if it
+  uses touying functions.
+
+## 4. Themes
+
+Import with `#import themes.<name>: *` and apply with `#show: <name>-theme.with(aspect-ratio: "16-9", ..)`.
+
+| Theme | Slide functions | Notes |
+| --- | --- | --- |
+| `simple` | `title-slide[body]`, `centered-slide[..]`, `focus-slide[..]`, `new-section-slide` | `title-slide` takes its content as body. |
+| `metropolis` | `title-slide()`, `outline-slide()`, `focus-slide[..]`, `new-section-slide` | Uses `config-info`. Options: `footer:`, `footer-progress:`, `header-right:`. |
+| `dewdrop` | `title-slide()`, `outline-slide()`, `focus-slide[..]` | `slide-level` 3; navigation bar via `navigation:`. |
+| `university` | `title-slide()`, `focus-slide[..]`, `matrix-slide[..][..]` | Uses `config-info` including `institution`, `logo`. |
+| `aqua` | `title-slide()`, `outline-slide()`, `focus-slide[..]` | |
+| `stargazer` | `title-slide()`, `outline-slide()`, `focus-slide[..]`, `ending-slide[..]`, `tblock(title:)[..]` | |
+
+`config-info(title:, subtitle:, author:, date:, institution:, contact:, logo:, extra:)` feeds the title slide,
+header and footer of every theme. `aspect-ratio` is `"16-9"` or `"4-3"`. Global styles go after the theme's show
+rule, e.g. `#set text(font: "Fira Sans")`.
+
+## 5. Step-by-step reveals (subslides)
+
+One slide can produce several pages ("subslides") that reveal content step by step.
+
+```typst
+#import "@preview/touying:0.8.1": *
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9")
+
+== Markers
+
+First #pause second, on page 2.
+
+#pause
+
+Third, on page 3.
+
+#meanwhile
+
+Shown from page 1 alongside "First"; #pause this from page 2.
+
+== Functions
+
+#uncover("2-")[Visible from page 2; space reserved before.]
+
+#only("2-")[Visible from page 2; no space reserved before.]
+
+#alternatives[first version][second version]
+
+$
+  f(x) &= pause x^2 + 2x + 1 \
+       &= pause (x + 1)^2
+$
+
+== Callback style
+
+#slide(repeat: 3, self => [
+  #let (uncover, only, alternatives) = utils.methods(self)
+  Page #self.subslide of 3. #uncover("3")[Only on page 3.]
+])
+```
+
+- Index syntax: `2`, `"2-"`, `"-3"`, `"1, 3-4"`, or an array `(1, 3)`.
+- `#pause` inside an equation works (shown above).
+- CeTZ and fletcher drawings animate with `touying-reduce`: `#let cetz-canvas = touying-reduce.with(cetz)`, then
+  inside the drawing use `(pause,)` between commands. For fletcher, `#let diagram = touying-reduce.with(fletcher)` and
+  plain `pause` between `node`/`edge` arguments.
+- The callback style (`slide(repeat: n, self => ..)` with `utils.methods(self)`) works where markers do not, e.g.
+  inside `grid`, `table` or `context`.
+- Covered content is hidden by default. Show it dimmed instead with
+  `config-methods(cover: utils.semi-transparent-cover)` or `utils.alpha-changing-cover`.
+
+## 6. Configuration
+
+All `config-*` functions are passed to the theme call and merged.
+
+| Function | Important keys |
+| --- | --- |
+| `config-info` | `title`, `subtitle`, `author`, `date`, `institution`, `contact`, `logo`, `extra` |
+| `config-common` | `slide-level`, `handout`, `handout-subslides`, `export-mode`, `show-notes-on-second-screen`, `show-only-notes`, `frozen-counters`, `datetime-format` |
+| `config-page` | `paper`, `margin`, `header`, `footer`, `fill`, `background` (like `set page`) |
+| `config-colors` | `primary`, `secondary`, `tertiary`, `neutral-lightest`, ... |
+| `config-methods` | `cover`, `init`, `alert` |
+| `config-scene` | `run-time`, `rate`, `samples-per-second`, `max-samples`, `max-geometry` (scenes, section 8) |
+
+Example: `#show: university-theme.with(aspect-ratio: "16-9", config-colors(primary: rgb("#04364A")))`.
+
+## 7. Speaker notes, output modes, handouts
+
+- `#speaker-note[..]` on a slide. Notes go to the pdfpc file by default, to a second screen with
+  `config-common(show-notes-on-second-screen: right)`, and to the HTML presenter window (section 13).
+- Output modes: `config-common(export-mode: "presentation" | "handout" | "slides" | "article")` or
+  `--input export-mode=handout` on the command line.
+- Handouts keep the last subslide of each slide by default; `config-common(handout-subslides: 1)` or `(1, -1)` or
+  `"1-2"` chooses others.
+- Mode-specific content: `#presentation-only[..]`, `#handout-only[..]`, `#slides-only[..]`, `#article-only[..]`,
+  `#article-text[..]` (replaces the slide in article mode).
+
+---------------------------------------------------------------------------------------------------------------------
+
+## 8. Scenes: manim-style animation
+
+`touying-scene` animates named objects along a timeline, like manim. The same source gives:
+
+- **PDF, handout and article:** one page per `click`, showing the state at the end of that step. These are ordinary
+  subslides.
+- **HTML:** a self-contained file in which everything actually moves: fades, drawing, writing, morphs, trackers,
+  graphs and 3D. It is exported with touying-exporter (section 13).
+
+Mental model:
+- `objects` is a dictionary of named things to draw.
+- `timeline` is an array of steps. A bare animation is one step; `play(..)` runs several together; `wait(s)` pauses;
+  `click` waits for the presenter and starts a new subslide.
+- Each animation takes `run-time:` (seconds) and `rate:` (easing).
+
+```typst
+#import "/lib.typ": *   // the touying checkout with scenes (rule 5)
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9")
+#let sc = touying-scene
+
+== Energy
+
+#sc.scene(
+  width: 20cm,
+  height: 6cm,
+  objects: (
+    eq: sc.obj(at: (10, 4), $E = m c^2$),
+    note: sc.obj(at: (10, 2), text(size: 0.8em)[mass is energy]),
+  ),
+  timeline: (
+    sc.write("eq"),
+    sc.click,
+    sc.play(sc.fade-in("note", shift: (0, -0.5)), sc.indicate("eq")),
+  ),
+)
+
+#pause
+Text after the scene appears on the page after the scene's last step.
+```
+
+### The scene
+
+`scene(width:, height:, objects:, timeline:, id: auto, bounds: auto, unit: auto, cetz: none, camera: none, alt:
+none, handout: auto, clip: false)`
+
+- `width` and `height` are required lengths.
+- **Coordinates.** Numbers are scene units, y up, with the origin at the bottom-left. By default one unit is 1 cm, so
+  a `20cm × 6cm` scene spans x 0..20 and y 0..6. `bounds: ((xmin, ymin), (xmax, ymax))` sets another range, which
+  is centred and widened to fill the box.
+- `id` must be unique per slide when a slide has two scenes.
+- `cetz: cetz` is needed for `cetz-obj`.
+- `handout` is the state shown in handout and article mode: `auto` (the end), a segment number, or `"start"`.
+- `alt` is text for screen readers in the HTML export.
+- A scene must be at the top level of a slide body, not inside `only`, `uncover` or `alternatives`. Put `#pause`
+  before it to reveal it later.
+
+### Objects
+
+| Constructor | Meaning |
+| --- | --- |
+| `obj(body, at: (0, 0), anchor: center + horizon)` | Any content (text, equation, image, table). `anchor` is the point of the object placed at `at`. |
+| `cetz-obj(body)` | CeTZ draw commands in scene coordinates (needs `scene(cetz: cetz)`); must stay inside the scene bounds. |
+| `tracked(fn, ..values, interpolate: false)` | Value tracker: `fn(v)` receives a dictionary of the current values and returns an object. Animate the values with `set-value`. |
+| `shape(paths:, labels:)`, `path(pts: ..)` | Native paths in scene coordinates. |
+| `group(..objs)` | Several objects drawn and animated as one, e.g. as the result of `tracked`. |
+| graph helpers | `axes`, `plot`, `dot`, `tangent`, ... (section 9) |
+| `surround(of:)`, `brace(of:)` | Annotations (section 11) |
+| 3D objects | `surface`, `curve3d`, ... (section 12) |
+
+Common options on every object:
+- `visible: auto` hides an object at the start if its first animation brings it in (`fade-in`, `create`, `write`,
+  `add`, `show-passing-flash`, or being the target of a `transform`). Set `true` or `false` to override.
+- `pivot: auto` is the centre for rotation and scaling.
+- `behind: true` draws a 2D object behind the 3D layer.
+
+### Timeline entries
+
+| Entry | Meaning |
+| --- | --- |
+| `play(..anims, run-time: auto, rate: auto, lag-ratio: 0)` | Run together. `lag-ratio: 1` runs them one after another; 0.5 overlaps them by half. |
+| `wait(seconds)` | Pause. |
+| `click` | Wait for a click. This starts a new subslide; start the timeline with `click` to show the empty state first. |
+
+### Animations
+
+Every animation also takes `run-time:` and `rate:`.
+
+| Animation | Effect |
+| --- | --- |
+| `fade-in(id, shift: none)`, `fade-out(id, shift: none)` | Fade, optionally moving by a vector `(dx, dy)`. |
+| `create(id)`, `uncreate(id)` | Draw strokes progressively (other parts fade). |
+| `write(id)`, `unwrite(id)` | Reveal from left to right (text, equations). |
+| `add(id)`, `remove(id)` | Show or hide instantly. |
+| `shift(id, (dx, dy))` | Move by a vector. |
+| `move-to(id, (x, y))` | Move the anchor (the pivot for drawings) to a point. |
+| `move-along(id, path)` | Follow an array of points or a function `t => (x, y)` on [0, 1]. |
+| `rotate-by(id, angle)`, `scale-by(id, factor)` | Rotate (counter-clockwise) or scale about the pivot. |
+| `indicate(id, scale: 1.2)` | Briefly enlarge. |
+| `set-value(id, name: value, ..)` | Animate the values of a `tracked` object. |
+| `transform(a, b, mode: auto)` | Morph `a` into `b`; `a` is gone afterwards (section 10). |
+| `transform-matching(a, b)` | Rearrange an equation symbol by symbol (section 10). |
+| `circumscribe`, `flash`, `focus-on`, `show-passing-flash`, `wiggle` | Emphasis (section 11). |
+| `move-camera`, `rotate-camera`, `rotate-3d`, `shift-3d` | 3D (section 12). |
+
+**Rates:** `"smooth"` (the default), `"linear"`, `"rush-into"`, `"rush-from"`, `"there-and-back"`,
+`"ease-in-quad"`, `"ease-out-quad"`, `"ease-in-cubic"`, `"ease-out-cubic"`, `"ease-in-out-cubic"`,
+`"ease-in-out-sine"`, or any function `t => ..` on [0, 1].
+
+**Rules:**
+- Two animations may not change the same property of the same object at the same time (e.g. two `shift`s of `"a"`
+  in one `play`). Run them one after another.
+- `create` and `show-passing-flash` on the same object may not overlap.
+- Times in `wait`, `run-time` and `lag-ratio` are plain numbers.
+
+### Value trackers
+
+```typst
+#import "/lib.typ": *
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9", config-scene(samples-per-second: 12))
+#let sc = touying-scene
+
+== A growing circle
+
+#sc.scene(
+  width: 16cm,
+  height: 6cm,
+  objects: (
+    c: sc.tracked(r: 0.5, interpolate: true, v => sc.obj(
+      at: (8, 3),
+      circle(radius: v.r * 1cm, fill: blue.lighten(60%)),
+    )),
+    label: sc.tracked(r: 0.5, v => sc.obj(at: (14, 3), $r = #calc.round(v.r, digits: 2)$)),
+  ),
+  timeline: (
+    sc.click,
+    sc.play(sc.set-value("c", r: 2.5), sc.set-value("label", r: 2.5), run-time: 2),
+  ),
+)
+```
+
+- In HTML, tracked objects are re-rendered by Typst at `config-scene(samples-per-second: ..)` (default 30).
+- With `interpolate: true` the player blends samples, so 10–12 per second look smooth. Use it only when the drawing
+  changes continuously.
+- Leave text that shows rounded numbers at `interpolate: false`, as `label` above does.
+
+## 9. Scenes: graphs
+
+The graph helpers draw natively (no CeTZ) and are ordinary objects, so `create`, `fade-in`, `transform` and so on
+work on them.
+
+```typst
+#import "/lib.typ": *
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9", config-scene(samples-per-second: 12))
+#let sc = touying-scene
+
+#let f(x) = x * x * x - 3 * x
+#let ax = sc.axes(x: (-2.5, 2.5, 1), y: (-3, 3, 1), at: (1, 0.5), size: (10, 6), labels: ($x$, $y$))
+
+== Tangent along a cubic
+
+#sc.scene(
+  width: 20cm,
+  height: 7cm,
+  objects: (
+    ax: ax,
+    graph: sc.plot(ax, f),
+    t: sc.tracked(x: -2, interpolate: true, v => sc.group(
+      sc.tangent(ax, f, v.x, df: x => 3 * x * x - 3),
+      sc.dot(ax, (v.x, f(v.x))),
+    )),
+    eq: sc.obj(at: (16, 5), $f(x) = x^3 - 3x$),
+  ),
+  timeline: (
+    sc.play(sc.create("ax"), sc.create("graph"), sc.write("eq")),
+    sc.fade-in("t"),
+    sc.click,
+    sc.set-value("t", x: 2, run-time: 3, rate: "linear"),
+  ),
+)
+```
+
+**Axes.** `axes(x: (min, max, step), y: (min, max, step), at: (x0, y0), size: (w, h), ..)`:
+- `at` is the bottom-left corner of the plot rectangle and `size` its width and height, both in scene units.
+- Each axis line lies at the other axis' 0 if it is in range, else at its edge.
+- Options:
+  - `ticks: true`;
+  - `numbers: auto | none | (values) | ((value, content), ..) | (x: .., y: ..)`;
+  - `labels: ($x$, $y$)`;
+  - `tips: true`, `grid: false`;
+  - `stroke`, `tick-size`, `tip-size`, `number-size`.
+- A step may be left out: `x: (0, 10)` gives no ticks on that axis.
+- `c2p(ax, (x, y))` converts axis coordinates to scene coordinates. Use it for `obj(at: ..)`, `move-to`,
+  `flash((x, y))` and so on.
+
+| Helper | Meaning |
+| --- | --- |
+| `plot(ax, f, domain: auto, samples: 128, discontinuities: (), stroke:, dash:)` | Graph of `f`, clipped to the plot rectangle. |
+| `dot(ax, (x, y), radius: 2.5pt, fill: black)` | A dot. |
+| `tangent(ax, f, x, length: 2, df: none)` | Tangent at `x`, `length` scene units long; `df` is the exact derivative (else a numeric one). |
+| `secant(ax, f, x1, x2, length: auto, guides: false)` | Secant; `guides: true` adds Δx/Δy legs and labels. `x1 == x2` is an error. |
+| `area(ax, f, domain: (a, b), g: none, fill:, neg-fill: auto)` | Region between `f` and `g` (default the x axis); parts with `f < g` use `neg-fill`. |
+| `riemann(ax, f, domain:, n: 10, mode: "left" \| "right" \| "mid", fill:, neg-fill:)` | Riemann rectangles. |
+| `v-line(ax, (x, y))`, `h-line(ax, (x, y))` | Dashed guides from the axes to a point. |
+| `graph-path(ax, f, domain: auto)` | A path for `move-along("dot", graph-path(ax, f))`. |
+
+Gaps and poles:
+- `f` may return `none` where it is undefined: `x => if x < 0 { none } else { calc.sqrt(x) }`. A Typst error such
+  as `calc.sqrt(-1)` cannot be caught, so guard it like that.
+- `discontinuities: (0,)` splits the graph at those x values, and `f` is never evaluated there:
+  `plot(ax, x => 1 / x, discontinuities: (0,))`.
+
+Smooth tracked graphs:
+- A `tracked` graph object with `interpolate: true` stays smooth as long as its number of parts stays the same.
+- It changes when `samples` or `n` change, when the graph crosses a gap or the plot border, or when label text
+  changes.
+- Pass `n: int(v.n)` to `riemann` inside a tracker, and leave such trackers at `interpolate: false`.
+
+## 10. Scenes: morphing
+
+- `transform(a, b)`: in HTML the outline of `a` morphs point by point into `b` (manim's `ReplacementTransform`).
+  - Examples: circle to square, one graph to another, `$x^2$` to `$sin x$`.
+  - Parts without a partner grow from or shrink to a point. `a` is invisible afterwards. In PDF, `b` simply replaces
+    `a`.
+- `transform(a, b, mode: "fade")` crossfades while moving and scaling between the two boxes.
+- `transform(a, b, mode: "shape")` is a compile error when the timeline rules out a morph. Use it to make sure.
+- `transform` falls back to the crossfade automatically when:
+  - either object is animated otherwise during the morph;
+  - either object is not fully visible;
+  - the rate does not start at 0 and end at 1, such as `"there-and-back"`;
+  - images, gradients or dashed strokes are involved;
+  - another object drawn between them overlaps.
+- `transform-matching(a, b)` rearranges equations: equal glyphs move to their new places and the rest fades. Mark
+  corresponding parts that change size with `key`:
+
+```typst
+#let n = touying-scene.key.with("n")
+// in objects:
+//   src: sc.obj(at: (5, 2), $#n[$n$] dot x$),
+//   dst: sc.obj(at: (5, 2), $x^#n[$n$]$),
+// in the timeline:
+//   sc.transform-matching("src", "dst")
+```
+
+Use `transform-matching` to keep symbols, `transform` to change shapes, and `mode: "fade"` for unrelated content.
+During either morph, the two objects may not be animated by anything else.
+
+## 11. Scenes: emphasis and annotations
+
+Annotations are persistent objects. They are visible in PDF too, and `create` draws them in:
+
+- `surround(of: "eq", buff: 0.15, shape: "rect" | "circle", radius: 0pt, stroke:, fill: none)` draws a box or
+  circle around another object.
+- `brace(of: "eq", side: bottom | top | left | right, label: [..], gap: 0.15, size: 0.25)` draws a curly brace
+  with an optional label.
+
+They measure the target where it is laid out (with its initial values) and do not follow later moves. To highlight
+part of an equation, make that part its own `obj` and annotate it.
+
+Effects play in HTML only and leave nothing behind in PDF:
+
+| Animation | Effect |
+| --- | --- |
+| `circumscribe(id, shape: "rect", fade: false, time-width: 0.3)` | An outline runs around the object once. `fade: true` draws it, holds it and fades it out. |
+| `flash(id or (x, y), lines: 12, radius: auto, line-length: 0.3)` | Lines burst outwards. |
+| `focus-on(id or (x, y))` | A spotlight shrinks onto the target. |
+| `show-passing-flash(id, time-width: 0.3)` | A highlight runs along the object's strokes; the object is invisible afterwards. Use it on a coloured copy of a curve. |
+| `wiggle(id, scale: 1.1, angle: 3.6deg, n: 6)` | Rotate back and forth while briefly growing (rate: linear; a custom rate must start at 0 and end at 1). |
+| `indicate(id, scale: 1.2)` | Briefly enlarge. |
+
+Effects measure their target when they start. To outline an object after it moved, put the effect after the move.
+
+```typst
+#import "/lib.typ": *
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9")
+#let sc = touying-scene
+
+== Emphasis
+
+#sc.scene(
+  width: 20cm,
+  height: 6cm,
+  objects: (
+    eq: sc.obj(at: (7, 3.5), text(size: 28pt, $F = m a$)),
+    br: sc.brace(of: "eq", label: [Newton's second law]),
+    star: sc.obj(at: (15, 3), circle(radius: 0.4cm, fill: orange)),
+  ),
+  timeline: (
+    sc.write("eq"),
+    sc.circumscribe("eq"),
+    sc.click,
+    sc.create("br"),
+    sc.play(sc.flash("star"), sc.wiggle("eq")),
+  ),
+)
+```
+
+## 12. Scenes: 3D
+
+Give the scene a camera: `scene(camera: sc.camera(phi: 70deg, theta: -45deg, zoom: 1, focal: none))`.
+- `phi` is the polar angle from +z (0° looks straight down) and `theta` the azimuth.
+- `focal: none` is orthographic; a number gives perspective.
+
+| 3D object | Meaning |
+| --- | --- |
+| `surface(f: (x, y) => z, x: (a, b), y: (c, d), samples: (24, 24), fill:, stroke:, shade: false)` | Height field; `fill` may be a gradient (by height) or `(x, y, z) => color`. Parametric: `surface(fn: (u, v) => (x, y, z), u:, v:)`. |
+| `curve3d(t => (x, y, z), t: (a, b), samples: 64)`, `line3d(..points, closed: false)` | Curves. |
+| `vector3d(from, to)`, `point3d(p)`, `polygon3d(..points)` | Arrow, point, flat convex polygon. |
+| `axes3d(x: (a, b), y:, z:, labels: ($x$, $y$, $z$))` | Axes. |
+| `label3d(p, body, depth: false)` | Content at a 3D point, facing the viewer. |
+| `group3d(..objects)` | Animate several as one. |
+
+Animations:
+- Camera: `move-camera(phi:, theta:, zoom:, focal:, center:)` and `rotate-camera(by: 360deg)` (an orbit, rate
+  linear).
+- Objects: `rotate-3d(id, angle, axis: "x" | "y" | "z" | (ax, ay, az), about: auto)` and `shift-3d(id, (dx, dy,
+  dz))`, plus `fade-in`/`fade-out`/`add`/`remove`/`create`/`set-value`.
+- 2D animations such as `shift` and `transform` are compile errors on 3D objects.
+- Angles are literal: going from 350° to 10° turns back by 340°.
+- 2D objects in the same scene are drawn in front of the 3D layer (or behind it with `behind: true`). Use them for
+  formulas and captions.
+- A `tracked` object may return a 3D object, for example a deforming surface. Its number of points must not change
+  with the values.
+- In HTML the audience can drag to look around, use the wheel to zoom and press <kbd>0</kbd> to reset; the next
+  click turns the view back smoothly.
+
+```typst
+#import "/lib.typ": *
+#import themes.simple: *
+#show: simple-theme.with(aspect-ratio: "16-9")
+#let sc = touying-scene
+
+== A saddle
+
+#sc.scene(
+  width: 20cm,
+  height: 8cm,
+  camera: sc.camera(phi: 65deg, theta: -50deg, zoom: 1.2),
+  objects: (
+    axes: sc.axes3d(x: (-2.5, 2.5), y: (-2.5, 2.5), z: (-2, 2)),
+    surf: sc.surface(
+      f: (x, y) => (x * x - y * y) / 4,
+      x: (-2, 2),
+      y: (-2, 2),
+      samples: (16, 16),
+      fill: gradient.linear(..color.map.viridis),
+      shade: true,
+    ),
+    eq: sc.obj(at: (0.5cm, 0.5cm), anchor: left + top, $z = (x^2 - y^2) / 4$),
+  ),
+  timeline: (
+    sc.play(sc.create("axes"), sc.fade-in("surf"), sc.fade-in("eq")),
+    sc.click,
+    sc.rotate-camera(by: 90deg, run-time: 3),
+  ),
+)
+```
+
+## 13. HTML export
+
+touying-exporter is the `dependencies/touying-exporter` submodule of the touying checkout; install it with
+`pip install -e dependencies/touying-exporter`.
+
+```sh
+touying compile slides.typ --root .          # writes slides.html (animated scenes)
+typst compile slides.typ --root .            # PDF: one page per step
+typst compile slides.typ --root . --input export-mode=handout handout.pdf
+```
+
+- The HTML is one compressed, self-contained file that works offline.
+- Keys:
+  - <kbd>→</kbd>, <kbd>Space</kbd> or a click: next. During an animation, the first press finishes it.
+  - <kbd>←</kbd>: back. <kbd>R</kbd>: replay. <kbd>F</kbd>: fullscreen. <kbd>N</kbd>: notes.
+  - <kbd>P</kbd> or <kbd>S</kbd>: presenter window with the current and next page, notes and a timer.
+- To inspect what the player receives:
+  `typst eval 'query(<touying-scene>).map(e => e.value)' --in slides.typ --input touying-scene=html`.
+
+## 14. Errors and fixes
+
+| Message (excerpt) | Fix |
+| --- | --- |
+| `overlapping animations on \`x\` (tx)` | Two animations change the same property at the same time. Use separate `play`s, or animate different properties. |
+| `overlapping animations on \`x\` (dash)` | `create` and `show-passing-flash` overlap on one object. Run them one after another. |
+| `unknown object \`x\`` | A timeline entry or `of:` names an object that is not in `objects`. |
+| `object name ... may only contain letters, digits` | Rename the object (no spaces or dots). |
+| `cetz object ... draws outside the scene bounds` | Enlarge `bounds`, or keep the drawing inside. |
+| `cetz-obj needs the cetz module` | Pass `scene(cetz: cetz)` after `#import "@preview/cetz:0.5.2"`. |
+| `does not apply to the 3D object` | Use the 3D animations (`rotate-3d`, `shift-3d`) on 3D objects. |
+| `needs scene(camera: camera(..))` | Add a camera to scenes with 3D objects. |
+| `mode: "shape"` ... | That morph cannot happen because of the timeline. Remove the concurrent animation, or use `mode: auto`. |
+| `secant: x1 and x2 are equal` | Use `tangent` for the limit. |
+| `the rate must start at 0 and end at 1` | `wiggle`, `transform-matching` and shape morphs need such a rate (not `"there-and-back"`). |
+| `tracked object ... needs N samples` | Lower `config-scene(samples-per-second: ..)`, raise `max-samples`, or use `interpolate: true` with fewer samples. |
+| `Unsupported mark` / `pause` inside a function | Use the callback style `slide(repeat: n, self => ..)`, or move the marker out of the function call. |
+| A scene inside `only`/`uncover` fails | Put scenes at the top level of a slide body; use `#pause` before them. |
+| `unknown variable: touying-scene` | You imported the released `@preview/touying:0.8.1`; import the checkout with scenes (rule 5). |
+
+## 15. Checklist before handing a deck over
+
+1. `typst compile` succeeds without errors.
+2. Render a few pages to PNG and look at them: nothing overflows the slide, and text sizes are readable.
+3. Scenes: every `click` is intended (each adds a PDF page), objects that should appear later have intro animations
+   or `visible: false`, and the last state is meaningful in PDF.
+4. For HTML, run `touying compile` and open the file. Check that animations run, and that morphs look as intended
+   (`transform` vs `transform-matching`).
+5. Speaker notes are in `#speaker-note[..]`, not on the slides.

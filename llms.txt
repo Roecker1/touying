@@ -1,0 +1,44 @@
+# Touying
+
+> Touying is a Typst package for presentation slides, an alternative to LaTeX Beamer. Headings create slides, a
+> theme is applied with a show rule, `#pause` reveals content step by step, and `touying-scene` adds manim-style
+> animated scenes (equations, graphs, morphs, 3D) that play in a self-contained HTML export.
+
+Read [llms-full.txt](llms-full.txt) before writing a deck. It covers the complete API with verified examples, rules
+that prevent common errors, an error-message table and a checklist.
+
+Essentials:
+
+- `#import "@preview/touying:0.8.1": *`, then `#import themes.metropolis: *` and
+  `#show: metropolis-theme.with(aspect-ratio: "16-9", config-info(title: [..], author: [..]))`.
+- `= Section`, `== Slide title`; `#title-slide()`; `#focus-slide[..]`; `#speaker-note[..]`.
+- `#pause`, `#meanwhile`, `#uncover("2-")[..]`, `#only(2)[..]`, `#alternatives[..][..]`; use
+  `slide(repeat: n, self => ..)` where markers cannot reach.
+- Scenes are in the development checkout (branch `feature/animations`), so import it by path:
+  `#import "/lib.typ": *` and `#let sc = touying-scene`.
+  - Then: `#sc.scene(width:, height:, objects: (..), timeline: (..))`.
+  - Times are seconds; coordinates are scene units, with y up.
+- PDF: `typst compile slides.typ`. Animated HTML: `touying compile slides.typ` (touying-exporter, in
+  `dependencies/touying-exporter`).
+
+## Reference
+
+- [llms-full.txt](llms-full.txt): the complete agent reference (slides, themes, animations, configuration, scenes,
+  graphs, morphing, emphasis, 3D, HTML export, errors).
+
+## Human documentation
+
+- [Getting started](docs/en/start.md)
+- [Simple animations](docs/en/tutorials/dynamic/simple.md), [complex animations](docs/en/tutorials/dynamic/complex.md)
+- [Scenes (manim-style animations)](docs/en/tutorials/dynamic/scene.md)
+- [Settings and config](docs/en/tutorials/settings.md), [sections](docs/en/tutorials/sections.md),
+  [speaker notes](docs/en/tutorials/speaker-notes.md), [output modes](docs/en/tutorials/output-modes.md)
+- Themes: [simple](docs/en/themes/simple.md), [metropolis](docs/en/themes/metropolis.md),
+  [university](docs/en/themes/university.md), [dewdrop](docs/en/themes/dewdrop.md), [aqua](docs/en/themes/aqua.md),
+  [stargazer](docs/en/themes/stargazer.md)
+- [touying-exporter (HTML export)](docs/en/external/touying-exporter.md)
+
+## Optional
+
+- [Examples](examples/): `simple.typ`, `metropolis.typ`, `scene.typ`, `scene3d.typ`, `scene-graphs.typ`
+- [Changelog](docs/en/changelog.md)
